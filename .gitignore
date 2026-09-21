@@ -1,0 +1,30 @@
+# Dependencies
+node_modules/
+
+# Logs & temp cache
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.tempmediaStorage/
+.user_uploaded/
+
+# OS / Editor files
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Media & Sample files
+sample_atmos_5.1.m4a
+
+# Tools folder: track the directory itself via .gitkeep, but ignore all contents inside
+tools/*
+!tools/.gitkeep
+
+# Explicitly ignore binaries, libraries, and executables
+tools/ffcodec64.dll
+*.dll
+*.exe
+*.so
+*.dylib
