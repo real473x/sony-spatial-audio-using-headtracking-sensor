@@ -8,7 +8,7 @@
 [![References](https://img.shields.io/badge/References-Credits%20%26%20Attributions-brightgreen.svg?style=flat-square)](REFERENCES.md)
 [![License](https://img.shields.io/badge/License-MIT-purple.svg?style=flat-square)](LICENSE)
 
-A universal spatial audio player for Windows with real-time head tracking via OpenTrack — engineered and verified with the **Sony WF-1000XM5** head tracking sensor, and compatible with any OpenTrack-supported tracking source or IMU — bringing Apple Spatial Audio-like experiences to Windows with full multichannel, surround sound, Dolby Atmos, Dolby AC-4, and 360 Reality Audio support.
+A universal spatial audio player for Windows with real-time head tracking via UDP (OpenTrack protocol) — engineered and verified with the **Sony WF-1000XM5** head tracking sensor (supports direct UDP streaming with no OpenTrack software required), and compatible with any OpenTrack-supported tracking source or IMU — bringing Apple Spatial Audio-like experiences to Windows with full multichannel, surround sound, Dolby Atmos, Dolby AC-4, and 360 Reality Audio support.
 
 ---
 
@@ -135,32 +135,35 @@ Supports dynamic layout selection and re-rendering:
 
 ## 📡 Pipeline Architecture
 
+SpatialAudio accepts the standardized 48-byte UDP telemetry stream (`127.0.0.1:4242`) either **directly** from `sony-head-tracker` or via **OpenTrack**:
+
 ```
-┌─────────────────────────────────┐
-│   Head Tracking IMU / Device    │  Orientation (Yaw, Pitch, Roll)
-│   (Tested: Sony WF-1000XM5)     │  or full 6-DoF position (X, Y, Z)
-└───────────────┬─────────────────┘
-                │
-                ▼
-┌─────────────────────────────────┐
-│   Tracking Bridge / Driver      │  e.g. sony-head-tracker (Sony earbuds),
-│   (sony-head-tracker / etc.)    │  AITrack (webcam), or Phone IMU
-└───────────────┬─────────────────┘
-                │
-                ▼
-┌─────────────────────────────────┐
-│           OpenTrack             │  Filter / smoothing & coordinate mapping
-└───────────────┬─────────────────┘
-                │ UDP (Port 4242) — 48-byte float64 packets
-                ▼
-┌─────────────────────────────────┐
-│        Node.js Bridge           │  server.js (UDP listener + Web server + C-FFI decoders)
-└───────────────┬─────────────────┘
-                │ WebSocket (ws://localhost:8080)
-                ▼
-┌─────────────────────────────────┐
-│        Web Audio API            │  HRTF PannerNodes + AudioListener + Analyser
-└─────────────────────────────────┘
+┌───────────────────────────────────────┐
+│       Sony WF-1000XM5 / WH-1000XM5    │
+└───────────────────┬───────────────────┘
+                    │ Bluetooth IMU Sensor Data
+                    ▼
+┌───────────────────────────────────────┐
+│          sony-head-tracker            │
+└───────────────────┬───────────────────┘
+                    │
+        ┌───────────┴────────────────────────┐
+        │ Direct UDP (Default)               │ Optional Routing
+        ▼                                    ▼
+        │                         ┌───────────────────────┐
+        │                         │       OpenTrack       │
+        │                         │ (Custom Curves / Inp) │
+        │                         └──────────┬────────────┘
+        │                                    │ UDP (Port 4242)
+        ▼                                    ▼
+┌─────────────────────────────────────────────────────────┐
+│    SpatialAudio Node.js Bridge (server.js UDP 4242)     │
+└───────────────────────────┬─────────────────────────────┘
+                            │ WebSocket (ws://localhost:8080)
+                            ▼
+┌─────────────────────────────────────────────────────────┐
+│     SpatialAudio Browser Engine (Web Audio API HRTF)    │
+└─────────────────────────────────────────────────────────┘
 ```
 
 ---
@@ -178,12 +181,9 @@ Supports dynamic layout selection and re-rendering:
 4. **OpenJOC or Cavernize (Optional — Unlocks 7.1.4 Object-Based Atmos)**:
    - **[OpenJOC](https://github.com/chyinan/OpenJOC)** (Recommended): Clean-room Rust decoder. Place `openjoc.exe` from [OpenJOC Releases](https://github.com/chyinan/OpenJOC/releases/latest) into `tools/` or your system `PATH`.
    - **[Cavernize](https://github.com/VoidXH/Cavern)**: C# spatial engine. Place `Cavernize.exe` from [Cavern Releases](https://github.com/VoidXH/Cavern/releases) into `tools/`.
-5. **Head Tracking Device**: Any OpenTrack-compatible tracker or sensor (built and tested with **Sony WF-1000XM5** earbuds).
-6. **Head Tracking Driver / Bridge**:
-   - For Sony earbuds: [NicholasSlattery/sony-head-tracker](https://github.com/NicholasSlattery/sony-head-tracker)
-   - For webcam face tracking: [AITrack](https://github.com/AIRLegend/aitrack)
-   - For smartphones or other IMUs: Any OpenTrack-supported input source
-7. **OpenTrack** — [opentrack/opentrack](https://github.com/opentrack/opentrack)
+5. **Head Tracking Device**:
+   - **For Sony WF-1000XM5 / WH-1000XM5**: [NicholasSlattery/sony-head-tracker](https://github.com/NicholasSlattery/sony-head-tracker). *(OpenTrack is NOT required — streams directly over UDP 4242).*
+   - **For Other Trackers (Webcam face-tracking, Phone IMU, TrackIR)**: [OpenTrack](https://github.com/opentrack/opentrack) + your tracker of choice (e.g. [AITrack](https://github.com/AIRLegend/aitrack)).
 
 ---
 
@@ -196,20 +196,26 @@ cd spatial-audio-player
 npm install
 ```
 
-### 2. Configure OpenTrack
-1. Launch **OpenTrack**.
-2. Set **Input** to **sony-head-tracker** (or UDP over network if using an intermediary).
-3. Set **Output** to **UDP over network**.
-4. In Output Settings:
-   - **Remote IP**: `127.0.0.1`
-   - **Port**: `4242`
-5. Click **Start** in OpenTrack to begin streaming tracking data.
+### 2. Start Head Tracking
+
+Choose your preferred tracker method:
+
+* **Option A — Sony Headphones (Direct & Simplest — No OpenTrack required!)**:
+  1. Pair your **WF-1000XM5** (or compatible Sony headphones) to Windows via Bluetooth.
+  2. Launch **`sony-head-tracker.exe`**.
+  3. That's it! `sony-head-tracker` detects your earbuds and streams orientation data directly over UDP (`127.0.0.1:4242`).
+
+* **Option B — Other Trackers via OpenTrack (Webcam, Phone IMU, TrackIR)**:
+  1. Launch **OpenTrack**.
+  2. Set **Input** to your tracker (e.g., AITrack for webcam face tracking, or phone sensor).
+  3. Set **Output** to **UDP over network** (Remote IP: `127.0.0.1`, Port: `4242`).
+  4. Click **Start** in OpenTrack.
 
 ### 3. Start the Player
 ```bash
 npm start
 ```
-Open **[http://localhost:3000](http://localhost:3000)** in your browser (Chrome, Edge, or Firefox).
+Open **[http://localhost:3000](http://localhost:3000)** in your browser (Chrome, Edge, or Firefox). The indicator in the top header will turn green: **● Head Tracking Active**.
 
 ---
 
@@ -253,27 +259,25 @@ SpatialAudio positions each channel in true 3D Euclidean space around the listen
 
 ## 🎧 Head Tracking Setup Guide (Tested on Sony WF-1000XM5)
 
-> 💡 **Universal Tracking**: While the steps below detail setup with the **Sony WF-1000XM5** (our primary test hardware), SpatialAudio receives data over OpenTrack's standard UDP protocol (`127.0.0.1:4242`). Any tracker configured in OpenTrack (e.g., AITrack webcam face tracker, TrackIR, phone IMU, or custom Bluetooth sensor) works out of the box.
+> 💡 **Direct Streaming vs. OpenTrack**:
+> - **Sony WF-1000XM5 / WH-1000XM5**: `sony-head-tracker.exe` streams **directly** to SpatialAudio on UDP port 4242. You do **not** need OpenTrack running at all!
+> - **Other Trackers (Webcam, Phone IMU, TrackIR)**: Use **OpenTrack** to translate your tracker's movement into UDP port 4242.
 
-### Step 1: Pair Earbuds to Windows (or prepare your tracking source)
-1. Place both **WF-1000XM5** earbuds in your ears or hold the pairing button on the case until the LED flashes blue.
-2. Open Windows Settings → **Bluetooth & devices** → **Add device** → Select **WF-1000XM5**.
+### Method 1: Direct Streaming with Sony Headphones (Recommended & Easiest)
+1. **Pair Headphones**: Turn on Bluetooth on Windows and pair your **WF-1000XM5** earbuds (or WH-1000XM5 headphones).
+2. **Run `sony-head-tracker.exe`**: Download and launch [sony-head-tracker.exe](https://github.com/NicholasSlattery/sony-head-tracker). It will detect your headphones and immediately stream 48-byte UDP packets to `127.0.0.1:4242`.
+3. **Launch SpatialAudio**:
+   ```bash
+   npm start
+   ```
+   Open **[http://localhost:3000](http://localhost:3000)**. The header indicator will instantly turn green: **● Head Tracking Active**.
 
-### Step 2: Run `sony-head-tracker` (or your chosen tracker)
-1. Download or compile [NicholasSlattery/sony-head-tracker](https://github.com/NicholasSlattery/sony-head-tracker).
-2. Launch `sony-head-tracker.exe`. It will discover your earbuds via Bluetooth Low Energy (BLE) and start streaming sensor data. *(If using another tracker, launch your tracker software).*
-
-### Step 3: Configure OpenTrack
+### Method 2: Setup via OpenTrack (For Other Trackers or Custom Curves)
 1. Launch **OpenTrack**.
-2. **Input**: Select the tracking source provided by `sony-head-tracker` (or your chosen input device).
-3. **Output**: Select **UDP over network** (`127.0.0.1:4242`).
-4. Click **Start**. The octopus/avatar in OpenTrack will mirror your head motion.
-
-### Step 4: Launch SpatialAudio
-```bash
-npm start
-```
-Open **[http://localhost:3000](http://localhost:3000)**. The header indicator will turn green: **● Head Tracking Active**.
+2. **Input**: Select your tracking input (e.g. AITrack for webcam face tracking, TrackIR, or phone IMU).
+3. **Output**: Select **UDP over network**. In settings, ensure Port is `4242` and IP is `127.0.0.1`.
+4. Click **Start** in OpenTrack.
+5. Launch SpatialAudio with `npm start` and open **[http://localhost:3000](http://localhost:3000)**.
 
 ---
 
