@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>SpatialAudio — Head-Tracked Spatial Audio Player</title>
-  <meta name="description" content="Spatial audio player with head tracking for Sony WF-1000XM5 earbuds on Windows. HRTF binaural rendering with OpenTrack integration.">
+  <meta name="description" content="Universal spatial audio player with head tracking on Windows. HRTF binaural rendering with OpenTrack integration (tested on Sony WF-1000XM5).">
   <link rel="stylesheet" href="index.css">
 </head>
 <body>
@@ -403,7 +403,7 @@
           <!-- Rotation Order / Axis Mapping Dropdown -->
           <div style="margin-bottom: 8px;">
             <select id="axis-order-select" style="width: 100%; padding: 6px 10px; border-radius: var(--radius-sm); background: var(--bg-input); color: var(--text-primary); border: 1px solid var(--border-subtle); font-size: 11px; font-family: var(--font-sans); cursor: pointer; outline: none;">
-              <option value="YXZ" selected>YXZ (Sony Head Tracker Default)</option>
+              <option value="YXZ" selected>YXZ (Default / Tested on Sony XM5)</option>
               <option value="XYZ">XYZ</option>
               <option value="XZY">XZY</option>
               <option value="YZX">YZX</option>
@@ -630,6 +630,9 @@
           <div>• <a href="https://github.com/NicholasSlattery/sony-head-tracker" target="_blank" style="color: var(--accent-primary); text-decoration: none;">sony-head-tracker</a> by Nicholas Slattery</div>
           <div>• <a href="https://github.com/opentrack/opentrack" target="_blank" style="color: var(--accent-primary); text-decoration: none;">OpenTrack</a> head tracking suite</div>
           <div>• <a href="https://github.com/expressjs/express" target="_blank" style="color: var(--accent-primary); text-decoration: none;">Express</a> &amp; <a href="https://github.com/websockets/ws" target="_blank" style="color: var(--accent-primary); text-decoration: none;">ws</a> for Node.js</div>
+          <div style="margin-top: 6px; padding-top: 6px; border-top: 1px dashed var(--border-subtle);">
+            <a href="REFERENCES.md" target="_blank" style="color: var(--accent-primary); text-decoration: none; font-weight: 600;">📖 Full References &amp; Attributions (REFERENCES.md) →</a>
+          </div>
         </div>
 
         <!-- ─── Custom Decoders (Collapsible Section below Credits & Open Source) ─── -->

@@ -106,7 +106,7 @@ class App {
     this.tracker.setInvertYaw(true);
     // Walking / Position (6-DoF) is OFF by default
     this.tracker.setPositionalEnabled(false);
-    // Axis mapping order (Default: YXZ for Sony WF-1000XM5 / OpenTrack)
+    // Axis mapping order (Default: YXZ — standard in OpenTrack, tested on Sony WF-1000XM5)
     const savedAxisOrder = localStorage.getItem('spatial_axis_order') || 'YXZ';
     this.tracker.setAxisOrder(savedAxisOrder);
     const axisSelectInit = document.getElementById('axis-order-select');

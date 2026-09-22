@@ -1,7 +1,7 @@
 {
   "name": "spatial-audio-player",
   "version": "1.0.0",
-  "description": "Head-tracked spatial audio player for Windows using Sony WF-1000XM5 earbuds via OpenTrack",
+  "description": "Universal head-tracked spatial audio player for Windows via OpenTrack (tested on Sony WF-1000XM5)",
   "main": "server.js",
   "scripts": {
     "start": "node server.js"

@@ -70,8 +70,8 @@ export class HeadTracker {
     this.enablePitch = true;
     this.enableRoll  = true;
 
-    // Axis mapping / Euler rotation order (Default: YXZ for Sony WF-1000XM5 / OpenTrack)
-    // In Sony IMU / OpenTrack convention:
+    // Axis mapping / Euler rotation order (Default: YXZ — OpenTrack standard, tested on Sony WF-1000XM5)
+    // Standard IMU / OpenTrack convention:
     // Yaw rotates around Y (vertical heading), Pitch rotates around X (lateral elevation), Roll rotates around Z (forward bank)
     this.axisOrder = 'YXZ';
     this.axisSourceYaw   = 'yaw';
@@ -106,13 +106,13 @@ export class HeadTracker {
   }
 
   /**
-   * Set Axis mapping matching the 6 Axis options in Sony Head Tracker / Spatial Audio Tracker software
+   * Set Axis mapping matching the 6 Axis options in Head Tracker / OpenTrack software
    * @param {'YXZ' | 'XYZ' | 'XZY' | 'YZX' | 'ZXY' | 'ZYX'} order
    */
   setAxisOrder(order) {
     this.axisOrder = order || 'YXZ';
     switch (this.axisOrder) {
-      case 'YXZ': // 1st=Y (Yaw), 2nd=X (Pitch), 3rd=Z (Roll) — Sony WF-1000XM5 Default
+      case 'YXZ': // 1st=Y (Yaw), 2nd=X (Pitch), 3rd=Z (Roll) — Default (tested on Sony WF-1000XM5)
         this.axisSourceYaw = 'yaw';
         this.axisSourcePitch = 'pitch';
         this.axisSourceRoll = 'roll';

@@ -3,9 +3,12 @@
 [![Node.js](https://img.shields.io/badge/Node.js-v18+-68a063.svg?style=flat-square&logo=node.js)](https://nodejs.org/)
 [![Web Audio API](https://img.shields.io/badge/Web%20Audio-HRTF%20Spatial-blue.svg?style=flat-square)](https://developer.mozilla.org/en-US/docs/Web/API/Web_Audio_API)
 [![OpenTrack](https://img.shields.io/badge/OpenTrack-UDP%204242-ff6b6b.svg?style=flat-square)](https://github.com/opentrack/opentrack)
+[![Built with AI](https://img.shields.io/badge/Built%20with-Gemini%20%7C%20Claude%20AI-orange.svg?style=flat-square)](#-ai--vibe-coding)
+[![Vibe Coded](https://img.shields.io/badge/Vibe%20Coding-Active-ff69b4.svg?style=flat-square)](#-ai--vibe-coding)
+[![References](https://img.shields.io/badge/References-Credits%20%26%20Attributions-brightgreen.svg?style=flat-square)](REFERENCES.md)
 [![License](https://img.shields.io/badge/License-MIT-purple.svg?style=flat-square)](LICENSE)
 
-A Windows spatial audio player that leverages the **Sony WF-1000XM5** (and compatible) head tracking sensor to create real-time binaural 3D spatial audio — bringing Apple Spatial Audio-like experiences to Windows with full multichannel, surround sound, Dolby Atmos, Dolby AC-4, and 360 Reality Audio support.
+A universal spatial audio player for Windows with real-time head tracking via OpenTrack — engineered and verified with the **Sony WF-1000XM5** head tracking sensor, and compatible with any OpenTrack-supported tracking source or IMU — bringing Apple Spatial Audio-like experiences to Windows with full multichannel, surround sound, Dolby Atmos, Dolby AC-4, and 360 Reality Audio support.
 
 ---
 
@@ -36,7 +39,7 @@ A Windows spatial audio player that leverages the **Sony WF-1000XM5** (and compa
 - **Route Track Audio to Solo**: Optionally routes full music mix into the active solo channel(s) instead of silence on other channels.
 
 ### 🎛️ Sensor Axes & Mapping (OpenTrack)
-- **Flexible Rotation Order**: Choose between `YXZ` (Sony WF-1000XM5 default), `XYZ`, `XZY`, `YZX`, `ZXY`, and `ZYX` coordinate conventions.
+- **Flexible Rotation Order**: Choose between `YXZ` (standard in OpenTrack; tested on Sony WF-1000XM5), `XYZ`, `XZY`, `YZX`, `ZXY`, and `ZYX` coordinate conventions.
 - **Per-Axis Toggle & Invert**:
   - 🟢 **Yaw (Y)**: Turn left / right (with Invert toggle).
   - 🔴 **Pitch (X)**: Nod up / down (with Invert toggle).
@@ -94,9 +97,9 @@ Automated listener POV trajectories that animate your position continuously thro
   - **Loop Track (🔂)**: Continuously repeats the current track.
   - **Loop All (🔁)**: Seamlessly loops the entire playlist.
 
-### 🎯 Real-Time Head Tracking (Sony WF-1000XM5)
+### 🎯 Real-Time Head Tracking (Tested on Sony WF-1000XM5)
 - **Anchored Soundstage**: Audio stays fixed in space as you turn your head (Yaw, Pitch, Roll), creating the illusion of sitting in a room with physical surround speakers.
-- **Earphone Inertial Walking & 6-DoF Positional Tracking**: Since standard Bluetooth earphone sensors (like the Sony WF-1000XM5) only stream 3-axis orientation angles (`yaw, pitch, roll`), SpatialAudio features a built-in **Inertial Gait & Step Detection Engine**. As you walk around your room, the player detects real-time head-bob dynamics and strides, smoothly translating your virtual POV in 3D (`x, y, z`) in the direction you are walking! Full direct 6-DoF translation (`tx, ty, tz`) from OpenTrack trackers is also seamlessly supported.
+- **Earphone Inertial Walking & 6-DoF Positional Tracking**: Since standard Bluetooth earphone sensors (tested with Sony WF-1000XM5) only stream 3-axis orientation angles (`yaw, pitch, roll`), SpatialAudio features a built-in **Inertial Gait & Step Detection Engine**. As you walk around your room, the player detects real-time head-bob dynamics and strides, smoothly translating your virtual POV in 3D (`x, y, z`) in the direction you are walking! Full direct 6-DoF translation (`tx, ty, tz`) from OpenTrack trackers is also seamlessly supported.
 - **Ultra-Low Latency Pipeline**: OpenTrack UDP (48-byte stream @ 50–100 Hz) → Node.js bridge → WebSocket → Web Audio HRTF `AudioListener`.
 - **Exponential Smoothing & Recentering**: Adjustable jitter reduction filter (5%–100%) and instant 1-key recentering (`R`).
 - **Standard Headphones Mode**: Dedicated toggle to disable head tracking when using regular earbuds or headphones without sensors.
@@ -133,29 +136,31 @@ Supports dynamic layout selection and re-rendering:
 ## 📡 Pipeline Architecture
 
 ```
-┌────────────────────────┐
-│  Sony WF-1000XM5       │  Bluetooth IMU sensor data
-└───────────┬────────────┘
-            │
-            ▼
-┌────────────────────────┐
-│   sony-head-tracker    │  Reads Sony BLE sensor packets
-└───────────┬────────────┘
-            │
-            ▼
-┌────────────────────────┐
-│       OpenTrack        │  Filter / smoothing
-└───────────┬────────────┘
-            │ UDP (Port 4242) — 48-byte float64 packets
-            ▼
-┌────────────────────────┐
-│   Node.js Bridge       │  server.js (UDP listener + Web server + C-FFI decoders)
-└───────────┬────────────┘
-            │ WebSocket (ws://localhost:8080)
-            ▼
-┌────────────────────────┐
-│     Web Audio API      │  HRTF PannerNodes + AudioListener + Analyser
-└────────────────────────┘
+┌─────────────────────────────────┐
+│   Head Tracking IMU / Device    │  Orientation (Yaw, Pitch, Roll)
+│   (Tested: Sony WF-1000XM5)     │  or full 6-DoF position (X, Y, Z)
+└───────────────┬─────────────────┘
+                │
+                ▼
+┌─────────────────────────────────┐
+│   Tracking Bridge / Driver      │  e.g. sony-head-tracker (Sony earbuds),
+│   (sony-head-tracker / etc.)    │  AITrack (webcam), or Phone IMU
+└───────────────┬─────────────────┘
+                │
+                ▼
+┌─────────────────────────────────┐
+│           OpenTrack             │  Filter / smoothing & coordinate mapping
+└───────────────┬─────────────────┘
+                │ UDP (Port 4242) — 48-byte float64 packets
+                ▼
+┌─────────────────────────────────┐
+│        Node.js Bridge           │  server.js (UDP listener + Web server + C-FFI decoders)
+└───────────────┬─────────────────┘
+                │ WebSocket (ws://localhost:8080)
+                ▼
+┌─────────────────────────────────┐
+│        Web Audio API            │  HRTF PannerNodes + AudioListener + Analyser
+└─────────────────────────────────┘
 ```
 
 ---
@@ -173,8 +178,11 @@ Supports dynamic layout selection and re-rendering:
 4. **OpenJOC or Cavernize (Optional — Unlocks 7.1.4 Object-Based Atmos)**:
    - **[OpenJOC](https://github.com/chyinan/OpenJOC)** (Recommended): Clean-room Rust decoder. Place `openjoc.exe` from [OpenJOC Releases](https://github.com/chyinan/OpenJOC/releases/latest) into `tools/` or your system `PATH`.
    - **[Cavernize](https://github.com/VoidXH/Cavern)**: C# spatial engine. Place `Cavernize.exe` from [Cavern Releases](https://github.com/VoidXH/Cavern/releases) into `tools/`.
-5. **Sony WF-1000XM5** (or compatible Sony earbuds/headphones) paired to Windows via Bluetooth.
-6. **sony-head-tracker** — [NicholasSlattery/sony-head-tracker](https://github.com/NicholasSlattery/sony-head-tracker)
+5. **Head Tracking Device**: Any OpenTrack-compatible tracker or sensor (built and tested with **Sony WF-1000XM5** earbuds).
+6. **Head Tracking Driver / Bridge**:
+   - For Sony earbuds: [NicholasSlattery/sony-head-tracker](https://github.com/NicholasSlattery/sony-head-tracker)
+   - For webcam face tracking: [AITrack](https://github.com/AIRLegend/aitrack)
+   - For smartphones or other IMUs: Any OpenTrack-supported input source
 7. **OpenTrack** — [opentrack/opentrack](https://github.com/opentrack/opentrack)
 
 ---
@@ -243,19 +251,21 @@ SpatialAudio positions each channel in true 3D Euclidean space around the listen
 
 ---
 
-## 🎧 Complete Sony WF-1000XM5 Setup Guide
+## 🎧 Head Tracking Setup Guide (Tested on Sony WF-1000XM5)
 
-### Step 1: Pair Earbuds to Windows
+> 💡 **Universal Tracking**: While the steps below detail setup with the **Sony WF-1000XM5** (our primary test hardware), SpatialAudio receives data over OpenTrack's standard UDP protocol (`127.0.0.1:4242`). Any tracker configured in OpenTrack (e.g., AITrack webcam face tracker, TrackIR, phone IMU, or custom Bluetooth sensor) works out of the box.
+
+### Step 1: Pair Earbuds to Windows (or prepare your tracking source)
 1. Place both **WF-1000XM5** earbuds in your ears or hold the pairing button on the case until the LED flashes blue.
 2. Open Windows Settings → **Bluetooth & devices** → **Add device** → Select **WF-1000XM5**.
 
-### Step 2: Run `sony-head-tracker`
+### Step 2: Run `sony-head-tracker` (or your chosen tracker)
 1. Download or compile [NicholasSlattery/sony-head-tracker](https://github.com/NicholasSlattery/sony-head-tracker).
-2. Launch `sony-head-tracker.exe`. It will discover your earbuds via Bluetooth Low Energy (BLE) and start streaming sensor data.
+2. Launch `sony-head-tracker.exe`. It will discover your earbuds via Bluetooth Low Energy (BLE) and start streaming sensor data. *(If using another tracker, launch your tracker software).*
 
 ### Step 3: Configure OpenTrack
 1. Launch **OpenTrack**.
-2. **Input**: Select the tracking source provided by `sony-head-tracker`.
+2. **Input**: Select the tracking source provided by `sony-head-tracker` (or your chosen input device).
 3. **Output**: Select **UDP over network** (`127.0.0.1:4242`).
 4. Click **Start**. The octopus/avatar in OpenTrack will mirror your head motion.
 
@@ -327,6 +337,7 @@ Open **[http://localhost:3000](http://localhost:3000)**. The header indicator wi
 ├── server.js               # UDP bridge, WebSocket streamer, C-FFI decoders, and audio API
 ├── package.json            # Node.js project manifest and scripts
 ├── README.md               # Complete documentation
+├── REFERENCES.md           # Comprehensive references, citations, and upstream credits
 ├── tools/
 │   ├── ffcodec64.dll       # Native Dolby AC-4 & multichannel decoder engine
 │   ├── openjoc.exe         # (Optional) OpenJOC 7.1.4 Atmos object audio renderer
@@ -343,15 +354,26 @@ Open **[http://localhost:3000](http://localhost:3000)**. The header indicator wi
 
 ## 🙌 Credits & Acknowledgements
 
-- **[chyinan/OpenJOC](https://github.com/chyinan/OpenJOC)** — Clean-room E-AC-3 JOC decoder in Rust with OAMD metadata and reconstruction-basis decoding.
-- **[VoidXH/Cavern](https://github.com/VoidXH/Cavern)** — Pioneering reverse-engineering of Dolby Digital Plus with Joint Object Coding (E-AC-3 JOC).
-- **[NicholasSlattery/sony-head-tracker](https://github.com/NicholasSlattery/sony-head-tracker)** — Bluetooth LE sensor protocol for Sony WF-1000XM5 earbuds on Windows.
-- **[opentrack/opentrack](https://github.com/opentrack/opentrack)** — Input filtering, smoothing curves, and UDP network streaming standard.
-- **[FFmpeg](https://ffmpeg.org)** — Multimedia processing engine for multichannel audio decoding.
-- **[koffi](https://koffi.dev)** — Fast C-FFI for Node.js powering the native AC-4 decoder engine.
-- **[websockets/ws](https://github.com/websockets/ws)** — High-performance WebSocket server for telemetry streaming.
-- **[expressjs/express](https://github.com/expressjs/express)** — Web server powering the local web interface.
-- **[W3C Web Audio API](https://www.w3.org/TR/webaudio/)** — Standard binaural HRTF spatial audio engine.
+> 📖 **Full Attribution Details**: For an exhaustive, in-depth breakdown of all upstream projects, reverse-engineering papers, research code, specifications, and third-party references, please read **[REFERENCES.md](REFERENCES.md)**.
+>
+> *(Note: A direct in-browser Web Bluetooth / WebHID sensor client was evaluated but removed because Windows pairs the Sony XM5 strictly as an audio device and isolates the HID sensor from browser pickers without native driver rebinding. The reliable OpenTrack + sony-head-tracker UDP pipeline is the supported standard).*
+
+SpatialAudio is built on the shoulders of brilliant researchers, audio engineers, and open-source developers:
+
+- **[NicholasSlattery/sony-head-tracker](https://github.com/NicholasSlattery/sony-head-tracker)** by Nicholas Slattery — Reverse-engineered Sony WF-1000XM5 / WH-1000XM5 Bluetooth LE telemetry and discovered the Android Head Tracker HID protocol implementation on Windows. Essential foundation for reading the Sony IMU stream.
+- **[opentrack/opentrack](https://github.com/opentrack/opentrack)** — The standard open-source head tracking suite, providing the UDP 4242 floating-point orientation protocol and Accela filter reference.
+- **[chyinan/OpenJOC](https://github.com/chyinan/OpenJOC)** by chyinan — Clean-room E-AC-3 JOC decoder in Rust with OAMD metadata parsing and 12-channel 7.1.4 Dolby Atmos reconstruction.
+- **[VoidXH/Cavern](https://github.com/VoidXH/Cavern)** by VoidXH — Pioneering reverse-engineering of Dolby Digital Plus with Joint Object Coding (E-AC-3 JOC) on Windows.
+- **[FFmpeg](https://ffmpeg.org)** — The Swiss Army knife of multimedia for high-performance multichannel bed extraction and container demuxing.
+- **[koffi](https://koffi.dev)** by Damian Stewart — Fast C-FFI for Node.js powering our native AC-4 decoder integration.
+- **[websockets/ws](https://github.com/websockets/ws)** — Ultra-low-latency WebSocket server streaming 100 Hz sensor packets to the browser.
+- **[expressjs/express](https://github.com/expressjs/express)** — High-reliability web server for local player delivery.
+- **[W3C Web Audio API](https://www.w3.org/TR/webaudio/)** — Standard HRTF binaural spatialization and dynamics processing.
+- **[Android Open Source Project (AOSP)](https://source.android.com/docs/core/audio/spatial-audio#head-tracking)** — Standard spatial audio head tracking HID descriptor specification.
+
+### 🤖 AI & Vibe Coding
+
+This project was built and vibe coded using Gemini and Claude AI.
 
 ---
 
