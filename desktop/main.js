@@ -5,6 +5,13 @@ const { spawn, exec, execSync } = require('child_process');
 const os = require('os');
 const fs = require('fs');
 
+let koffi = null;
+try {
+  koffi = require('koffi');
+} catch (err) {
+  console.warn('[Desktop] Koffi native module not loaded:', err.message);
+}
+
 let mainWindow = null;
 let tray = null;
 let serverProcess = null;
@@ -560,25 +567,34 @@ ipcMain.handle('get-mpegh-sources', async () => {
 // ─── 7. In-Process WinMM Audio & Bluetooth Endpoint Scanner ───────────────────
 // Instantaneous (< 1ms), pure C-FFI device enumeration without child processes
 
-const winmm = koffi.load('winmm.dll');
+let winmm = null;
+let waveOutGetNumDevs = null;
+let waveOutGetDevCapsW = null;
+let WAVEOUTCAPSW = null;
 
-const WAVEOUTCAPSW = koffi.struct('WAVEOUTCAPSW', {
-  wMid: 'uint16_t',
-  wPid: 'uint16_t',
-  vDriverVersion: 'uint32_t',
-  szPname: koffi.array('uint16_t', 32),
-  dwFormats: 'uint32_t',
-  wChannels: 'uint16_t',
-  wReserved1: 'uint16_t',
-  dwSupport: 'uint32_t'
-});
-
-const waveOutGetNumDevs = winmm.func('uint32_t __stdcall waveOutGetNumDevs()');
-const waveOutGetDevCapsW = winmm.func('uint32_t __stdcall waveOutGetDevCapsW(uintptr_t uDeviceID, _Out_ WAVEOUTCAPSW *pwoc, uint32_t cbwoc)');
+if (koffi && process.platform === 'win32') {
+  try {
+    winmm = koffi.load('winmm.dll');
+    WAVEOUTCAPSW = koffi.struct('WAVEOUTCAPSW', {
+      wMid: 'uint16_t',
+      wPid: 'uint16_t',
+      vDriverVersion: 'uint32_t',
+      szPname: koffi.array('uint16_t', 32),
+      dwFormats: 'uint32_t',
+      wChannels: 'uint16_t',
+      wReserved1: 'uint16_t',
+      dwSupport: 'uint32_t'
+    });
+    waveOutGetNumDevs = winmm.func('uint32_t __stdcall waveOutGetNumDevs()');
+    waveOutGetDevCapsW = winmm.func('uint32_t __stdcall waveOutGetDevCapsW(uintptr_t uDeviceID, _Out_ WAVEOUTCAPSW *pwoc, uint32_t cbwoc)');
+  } catch (err) {
+    console.warn('[Desktop] WinMM FFI initialization error:', err.message);
+  }
+}
 
 function scanConnectedAudioDevices() {
-  if (process.platform !== 'win32') {
-    return { deviceCategory: 'standard', deviceName: 'Default Audio', hasSensor: false, message: 'Audio output active' };
+  if (process.platform !== 'win32' || !winmm || !waveOutGetNumDevs || !waveOutGetDevCapsW) {
+    return { deviceCategory: 'standard', deviceName: 'Default Windows Audio', hasSensor: false, message: 'Audio output active' };
   }
 
   try {
