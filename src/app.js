@@ -2009,4 +2009,12 @@ document.addEventListener('DOMContentLoaded', () => {
   
   // Expose for debugging
   window.spatialAudio = app;
+
+  // Desktop integration (Electron System Tray)
+  if (window.desktopAPI && typeof window.desktopAPI.onTrayAction === 'function') {
+    window.desktopAPI.onTrayAction((action) => {
+      if (action === 'recenter') app.recenter();
+      if (action === 'play-pause') app.togglePlay();
+    });
+  }
 });

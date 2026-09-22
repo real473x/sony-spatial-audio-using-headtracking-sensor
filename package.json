@@ -2,9 +2,53 @@
   "name": "spatial-audio-player",
   "version": "1.0.0",
   "description": "Universal head-tracked spatial audio player for Windows via OpenTrack (tested on Sony WF-1000XM5)",
-  "main": "server.js",
+  "main": "desktop/main.js",
   "scripts": {
-    "start": "node server.js"
+    "start": "node server.js",
+    "desktop": "electron .",
+    "desktop:dev": "electron .",
+    "dist": "electron-builder --win",
+    "dist:portable": "electron-builder --win portable"
+  },
+  "author": "alexander",
+  "build": {
+    "appId": "com.spatialaudio.player",
+    "productName": "SpatialAudio",
+    "directories": {
+      "output": "dist"
+    },
+    "win": {
+      "target": [
+        "portable",
+        "nsis"
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true
+    },
+    "portable": {
+      "artifactName": "${productName}-Portable-${version}.${ext}"
+    },
+    "extraResources": [
+      {
+        "from": "tools",
+        "to": "tools",
+        "filter": [
+          "**/*"
+        ]
+      }
+    ],
+    "files": [
+      "desktop/**/*",
+      "src/**/*",
+      "index.html",
+      "index.css",
+      "server.js",
+      "package.json"
+    ]
   },
   "dependencies": {
     "express": "^4.21.0",
@@ -20,5 +64,9 @@
     "opentrack",
     "sony"
   ],
-  "license": "MIT"
+  "license": "MIT",
+  "devDependencies": {
+    "electron": "^44.4.3",
+    "electron-builder": "^26.15.3"
+  }
 }
