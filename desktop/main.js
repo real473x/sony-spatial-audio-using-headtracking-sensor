@@ -446,6 +446,7 @@ async function createWindow() {
   });
 
   setupTray();
+  startDeviceWatcher();
 }
 
 // ─── 6. IPC Handlers ──────────────────────────────────────────────────────────
@@ -477,7 +478,9 @@ ipcMain.handle('get-tracker-status', () => {
   const isRunning = isProcessRunning('sony-head-tracker.exe');
   return {
     configuredPath: currentPath,
-    isRunning: isRunning
+    isRunning: isRunning,
+    mode: activeTrackerMode,
+    nativeActive: !!nativeTracker
   };
 });
 
@@ -486,6 +489,106 @@ ipcMain.on('open-tools-folder', () => {
   if (!fs.existsSync(toolsDir)) fs.mkdirSync(toolsDir, { recursive: true });
   shell.openPath(toolsDir);
 });
+
+ipcMain.on('open-bluetooth-settings', () => {
+  shell.openExternal('ms-settings:bluetooth');
+});
+
+ipcMain.handle('scan-devices', () => {
+  return scanConnectedAudioDevices();
+});
+
+// ─── 7. In-Process WinMM Audio & Bluetooth Endpoint Scanner ───────────────────
+// Instantaneous (< 1ms), pure C-FFI device enumeration without child processes
+
+const winmm = koffi.load('winmm.dll');
+
+const WAVEOUTCAPSW = koffi.struct('WAVEOUTCAPSW', {
+  wMid: 'uint16_t',
+  wPid: 'uint16_t',
+  vDriverVersion: 'uint32_t',
+  szPname: koffi.array('uint16_t', 32),
+  dwFormats: 'uint32_t',
+  wChannels: 'uint16_t',
+  wReserved1: 'uint16_t',
+  dwSupport: 'uint32_t'
+});
+
+const waveOutGetNumDevs = winmm.func('uint32_t __stdcall waveOutGetNumDevs()');
+const waveOutGetDevCapsW = winmm.func('uint32_t __stdcall waveOutGetDevCapsW(uintptr_t uDeviceID, _Out_ WAVEOUTCAPSW *pwoc, uint32_t cbwoc)');
+
+function scanConnectedAudioDevices() {
+  if (process.platform !== 'win32') {
+    return { deviceCategory: 'standard', deviceName: 'Default Audio', hasSensor: false, message: 'Audio output active' };
+  }
+
+  try {
+    const num = waveOutGetNumDevs();
+    const sensorKeywords = ['wf-1000xm5', 'wh-1000xm5', 'wf-1000xm6', 'wh-1000xm6', 'wh-ult900n', 'ult wear', 'linkbuds'];
+    let sensorHeadset = null;
+    let standardAudio = null;
+
+    for (let i = 0; i < num; i++) {
+      const caps = {};
+      const res = waveOutGetDevCapsW(i, caps, 84);
+      if (res === 0) {
+        const rawArr = caps.szPname;
+        const buf = Buffer.from(rawArr.buffer, rawArr.byteOffset, 64);
+        const name = buf.toString('utf16le').replace(/\0.*$/, '').trim();
+        const lower = name.toLowerCase();
+
+        const isSensor = sensorKeywords.some(kw => lower.includes(kw));
+        if (isSensor && !sensorHeadset) {
+          sensorHeadset = name.replace(/^Headphones \((.*)\)$/, '$1').replace(/^Headset \((.*)\)$/, '$1');
+        } else if (!standardAudio && (lower.includes('head') || lower.includes('buds') || lower.includes('pods') || lower.includes('ear') || lower.includes('speaker'))) {
+          standardAudio = name.replace(/^Headphones \((.*)\)$/, '$1').replace(/^Headset \((.*)\)$/, '$1').replace(/^Speakers \((.*)\)$/, '$1');
+        }
+      }
+    }
+
+    if (sensorHeadset) {
+      return {
+        deviceCategory: 'sensor',
+        deviceName: sensorHeadset,
+        hasSensor: true,
+        message: `${sensorHeadset} (Motion Sensor Supported)`
+      };
+    } else if (standardAudio) {
+      return {
+        deviceCategory: 'standard',
+        deviceName: standardAudio,
+        hasSensor: false,
+        message: `${standardAudio} (Standard Audio — No Motion Sensor)`
+      };
+    } else {
+      return {
+        deviceCategory: 'none',
+        deviceName: null,
+        hasSensor: false,
+        message: 'No headphones connected'
+      };
+    }
+  } catch (err) {
+    return {
+      deviceCategory: 'standard',
+      deviceName: null,
+      hasSensor: false,
+      message: 'Audio output active'
+    };
+  }
+}
+
+let lastBroadcastDeviceStatus = null;
+function startDeviceWatcher() {
+  setInterval(() => {
+    if (!mainWindow || mainWindow.isDestroyed()) return;
+    const status = scanConnectedAudioDevices();
+    if (JSON.stringify(status) !== JSON.stringify(lastBroadcastDeviceStatus)) {
+      lastBroadcastDeviceStatus = status;
+      mainWindow.webContents.send('device-status-update', status);
+    }
+  }, 2500);
+}
 
 // ─── 7. App Lifecycle ─────────────────────────────────────────────────────────
 

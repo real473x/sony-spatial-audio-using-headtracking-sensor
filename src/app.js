@@ -101,6 +101,37 @@ class App {
 
     this.tracker.connect();
 
+    // ─── Desktop Device Status & Bluetooth Settings Integration ─────────
+    this.deviceStatus = null;
+    this.trackingConnected = false;
+
+    if (window.desktopAPI) {
+      if (window.desktopAPI.onDeviceStatusUpdate) {
+        window.desktopAPI.onDeviceStatusUpdate((deviceStatus) => {
+          this._updateDeviceStatusUI(deviceStatus);
+        });
+      }
+      if (window.desktopAPI.scanDevices) {
+        window.desktopAPI.scanDevices().then((deviceStatus) => {
+          this._updateDeviceStatusUI(deviceStatus);
+        });
+      }
+    }
+
+    const trackingStatusEl = document.getElementById('tracking-status');
+    if (trackingStatusEl) {
+      trackingStatusEl.addEventListener('click', () => {
+        if (!this.trackingConnected && window.desktopAPI && window.desktopAPI.openBluetoothSettings) {
+          window.desktopAPI.openBluetoothSettings();
+        } else if (this.trackingConnected) {
+          this.tracker.recenter();
+          this._showStatus('🎯 Head tracking zero-point recentered');
+        } else {
+          this.tracker.recenter();
+        }
+      });
+    }
+
     // ─── Bootstrap default tracker state to match HTML initial values ─────
     // Yaw invert is ON by default (matches the checked HTML attribute)
     this.tracker.setInvertYaw(true);
@@ -389,13 +420,46 @@ class App {
     document.getElementById('time-current').textContent = this._formatTime(time);
   }
 
+  _updateDeviceStatusUI(deviceStatus) {
+    this.deviceStatus = deviceStatus;
+    this._renderDeviceBadge();
+  }
+
   _updateTrackingUI(connected, info) {
+    this.trackingConnected = connected;
+    this._renderDeviceBadge();
+  }
+
+  _renderDeviceBadge() {
     const dot = document.getElementById('tracking-dot');
     const text = document.getElementById('tracking-text');
-    
-    dot.classList.toggle('connected', connected);
-    dot.classList.toggle('disconnected', !connected);
-    text.textContent = connected ? 'Head Tracking Active' : 'Head Tracking Off';
+    const container = document.getElementById('tracking-status');
+    if (!dot || !text || !container) return;
+
+    if (this.trackingConnected) {
+      dot.className = 'tracking-dot connected';
+      const devName = this.deviceStatus?.deviceName || 'Headset';
+      text.textContent = `🎯 ${devName} (Sensor Active)`;
+      container.title = 'Head-tracking motion sensor active (25Hz). Click to recenter zero-point.';
+    } else if (this.deviceStatus?.deviceCategory === 'sensor') {
+      dot.className = 'tracking-dot standard';
+      const devName = this.deviceStatus.deviceName || 'Compatible Headset';
+      text.textContent = `🎧 ${devName} (Connecting Sensor...)`;
+      container.title = 'Compatible sensor headset detected. Initializing motion telemetry...';
+    } else if (this.deviceStatus?.deviceCategory === 'standard') {
+      dot.className = 'tracking-dot standard';
+      const devName = this.deviceStatus.deviceName || 'Standard Audio';
+      text.textContent = `🎧 ${devName} (Standard Audio)`;
+      container.title = 'Standard audio device (No motion sensor). Spatial audio is active — use mouse or WASD to orbit.';
+    } else if (this.deviceStatus?.deviceCategory === 'none') {
+      dot.className = 'tracking-dot disconnected';
+      text.textContent = '⚠️ No Headset • Pair in Bluetooth';
+      container.title = 'No Bluetooth headset connected. Click to open Windows Bluetooth Settings.';
+    } else {
+      dot.className = 'tracking-dot disconnected';
+      text.textContent = 'Head Tracking Off';
+      container.title = 'Head tracking inactive. Click to open Bluetooth settings.';
+    }
   }
 
   _showStatus(msg) {

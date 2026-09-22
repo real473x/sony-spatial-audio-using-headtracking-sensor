@@ -111,8 +111,12 @@ function stringToWide(str) {
   return new Uint16Array(buf.buffer, buf.byteOffset, str.length + 1);
 }
 
-// Find device path for Sony XM5
-function findSonyDevicePath() {
+// Universal Android Head Tracker HID Detection
+// Complies with official Android Head Tracker HID specification (UsagePage 0x0020, Usage 0x00E1)
+// Works across Sony WF-1000XM5, WH-1000XM5, WH-ULT900N, XM6, LinkBuds, and any compatible headset.
+const HidD_GetProductString = hid.func('bool __stdcall HidD_GetProductString(void *HidDeviceObject, _Out_ uint8_t *Buffer, uint32_t BufferLength)');
+
+function findHeadTrackerDevice() {
   const guid = {};
   HidD_GetHidGuid(guid);
 
@@ -126,7 +130,7 @@ function findSonyDevicePath() {
   };
 
   let index = 0;
-  let targetPath = null;
+  let candidate = null;
 
   while (SetupDiEnumDeviceInterfaces(devInfo, null, guid, index, ifaceData)) {
     const requiredSize = [0];
@@ -137,10 +141,53 @@ function findSonyDevicePath() {
       detailBuf.writeUInt32LE(8, 0); // cbSize = 8 on x64
       if (SetupDiGetDeviceInterfaceDetailW(devInfo, ifaceData, detailBuf, needed, requiredSize, null)) {
         const pathStr = detailBuf.slice(4).toString('utf16le').replace(/\0.*$/, '');
-        // Match Sony VID 054C, PID 0E63 (WF-1000XM5 / WH-1000XM5)
-        if (pathStr.toLowerCase().includes('054c') && pathStr.toLowerCase().includes('0e63')) {
-          targetPath = pathStr;
-          break;
+        
+        // Test open handle to query HID caps without exclusive locks
+        const widePath = stringToWide(pathStr);
+        const queryHandle = CreateFileW(
+          widePath,
+          0,
+          FILE_SHARE_READ | FILE_SHARE_WRITE,
+          null,
+          OPEN_EXISTING,
+          0,
+          null
+        );
+
+        if (queryHandle && queryHandle !== INVALID_HANDLE_VALUE) {
+          const ppdPtr = [null];
+          if (HidD_GetPreparsedData(queryHandle, ppdPtr)) {
+            const ppd = ppdPtr[0];
+            const capsBuf = Buffer.alloc(64);
+            if (HidP_GetCaps(ppd, capsBuf) === HIDP_STATUS_SUCCESS) {
+              const usage = capsBuf.readUInt16LE(0);
+              const usagePage = capsBuf.readUInt16LE(2);
+
+              // Standard Android Head Tracker specification: UsagePage 0x0020, Usage 0x00E1
+              if (usagePage === SENSOR_PAGE && usage === SENSOR_OTHER_CUSTOM) {
+                // Query real device model name via USB/BT HID product string
+                const prodBuf = Buffer.alloc(256);
+                let productName = 'Sony Head-Tracking Headset';
+                if (HidD_GetProductString(queryHandle, prodBuf, prodBuf.length)) {
+                  const parsedName = prodBuf.toString('utf16le').replace(/\0.*$/, '').trim();
+                  if (parsedName) productName = parsedName;
+                }
+
+                candidate = {
+                  path: pathStr,
+                  productName: productName,
+                  inputReportByteLength: capsBuf.readUInt16LE(4),
+                  featureReportByteLength: capsBuf.readUInt16LE(8)
+                };
+
+                HidD_FreePreparsedData(ppd);
+                CloseHandle(queryHandle);
+                break;
+              }
+            }
+            HidD_FreePreparsedData(ppd);
+          }
+          CloseHandle(queryHandle);
         }
       }
     }
@@ -148,7 +195,7 @@ function findSonyDevicePath() {
   }
 
   SetupDiDestroyDeviceInfoList(devInfo);
-  return targetPath;
+  return candidate;
 }
 
 // Initialize Sony XM5 Sensor via Feature Report 1
@@ -281,18 +328,23 @@ function quatToEulerDegrees(q) {
 
 // Main Polling & Reading Loop
 async function run() {
-  parentPort.postMessage({ type: 'status', state: 'searching', message: 'Scanning for Sony WF-1000XM5...' });
+  parentPort.postMessage({ type: 'status', state: 'searching', message: 'Scanning for head-tracking headset...' });
 
   while (isRunning) {
-    const devicePath = findSonyDevicePath();
-    if (!devicePath) {
-      await new Promise((resolve) => setTimeout(resolve, 1500));
+    const deviceInfo = findHeadTrackerDevice();
+    if (!deviceInfo) {
+      await new Promise((resolve) => setTimeout(resolve, 2000));
       continue;
     }
 
-    parentPort.postMessage({ type: 'status', state: 'connecting', devicePath });
+    parentPort.postMessage({
+      type: 'status',
+      state: 'connecting',
+      deviceName: deviceInfo.productName,
+      devicePath: deviceInfo.path
+    });
 
-    const widePath = stringToWide(devicePath);
+    const widePath = stringToWide(deviceInfo.path);
     const handle = CreateFileW(
       widePath,
       GENERIC_READ | GENERIC_WRITE,
@@ -304,8 +356,13 @@ async function run() {
     );
 
     if (!handle || handle === INVALID_HANDLE_VALUE) {
-      parentPort.postMessage({ type: 'status', state: 'error', message: 'Failed to open device: ' + GetLastError() });
-      await new Promise((resolve) => setTimeout(resolve, 2000));
+      parentPort.postMessage({
+        type: 'status',
+        state: 'error',
+        deviceName: deviceInfo.productName,
+        message: 'Could not open device handle (error: ' + GetLastError() + ')'
+      });
+      await new Promise((resolve) => setTimeout(resolve, 2500));
       continue;
     }
 
@@ -314,8 +371,13 @@ async function run() {
     if (!configureDevice(handle)) {
       CloseHandle(handle);
       activeHandle = null;
-      parentPort.postMessage({ type: 'status', state: 'error', message: 'Failed to configure features on XM5' });
-      await new Promise((resolve) => setTimeout(resolve, 2000));
+      parentPort.postMessage({
+        type: 'status',
+        state: 'error',
+        deviceName: deviceInfo.productName,
+        message: `Failed to configure head tracking features on ${deviceInfo.productName}`
+      });
+      await new Promise((resolve) => setTimeout(resolve, 2500));
       continue;
     }
 
@@ -331,7 +393,12 @@ async function run() {
       hEvent: hEvent
     };
 
-    parentPort.postMessage({ type: 'status', state: 'streaming', message: 'Streaming orientation from Sony XM5' });
+    parentPort.postMessage({
+      type: 'status',
+      state: 'streaming',
+      deviceName: deviceInfo.productName,
+      message: `Streaming head orientation from ${deviceInfo.productName}`
+    });
 
     const inputReport = Buffer.alloc(14);
     const bytesTransferred = [0];

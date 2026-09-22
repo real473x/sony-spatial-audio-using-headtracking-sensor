@@ -217,10 +217,24 @@ body {
   gap: 10px;
   padding: 8px 16px;
   border-radius: var(--radius-sm);
+.tracking-status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  border-radius: var(--radius-full);
   background: var(--bg-input);
   border: 1px solid var(--border-subtle);
   font-size: 12px;
   color: var(--text-secondary);
+  cursor: pointer;
+  user-select: none;
+  transition: var(--transition-fast);
+}
+
+.tracking-status:hover {
+  border-color: var(--accent-primary);
+  background: var(--bg-card);
 }
 
 .tracking-dot {
@@ -228,12 +242,18 @@ body {
   height: 8px;
   border-radius: 50%;
   transition: var(--transition-normal);
+  flex-shrink: 0;
 }
 
 .tracking-dot.connected {
   background: var(--accent-green);
   box-shadow: 0 0 8px rgba(52, 211, 153, 0.5);
   animation: pulse 2s infinite;
+}
+
+.tracking-dot.standard {
+  background: var(--accent-primary, #38bdf8);
+  box-shadow: 0 0 8px rgba(56, 189, 248, 0.4);
 }
 
 .tracking-dot.disconnected {
