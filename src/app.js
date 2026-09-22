@@ -1519,6 +1519,133 @@ class App {
       setTimeout(() => this._showStatus('Ready'), 2000);
     });
 
+    // ─── Fraunhofer MPEG-H VV Live Audio Stream Integration ─────────────────
+    const checkMpeghStatus = async () => {
+      const badge = document.getElementById('mpegh-vv-status-badge');
+      if (!badge) return;
+      if (window.desktopAPI?.getMpeghStatus) {
+        const stat = await window.desktopAPI.getMpeghStatus();
+        if (stat.isInstalled) {
+          badge.textContent = stat.isRunning ? '🟢 Running' : '🟢 Ready';
+          badge.style.color = 'var(--accent-success)';
+        } else {
+          badge.textContent = '⚪ Not Found';
+          badge.style.color = 'var(--text-muted)';
+        }
+      } else {
+        badge.textContent = 'Desktop Ready';
+      }
+    };
+    checkMpeghStatus();
+    setInterval(checkMpeghStatus, 5000);
+
+    document.getElementById('btn-launch-mpegh-vv')?.addEventListener('click', async () => {
+      this._showStatus('Launching Fraunhofer MPEG-H VVPlayer...');
+      if (window.desktopAPI?.openMpeghVv) {
+        const res = await window.desktopAPI.openMpeghVv(this.currentFile?.path || null);
+        if (res.success) {
+          this._showStatus('🚀 Fraunhofer MPEG-H VVPlayer launched');
+        } else {
+          this._showStatus(`⚠️ ${res.error || 'Launch failed'}`);
+        }
+      } else {
+        try {
+          const res = await fetch('/api/open-mpegh-player', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ filePath: this.currentFile?.path || null })
+          });
+          const data = await res.json();
+          if (res.ok) this._showStatus('🚀 MPEG-H VVPlayer launched');
+          else this._showStatus(`⚠️ ${data.error || 'Failed to launch'}`);
+        } catch (e) {
+          this._showStatus(`⚠️ ${e.message}`);
+        }
+      }
+      setTimeout(() => this._showStatus('Ready'), 2500);
+    });
+
+    document.getElementById('btn-hook-mpegh-audio')?.addEventListener('click', async () => {
+      const streamingBar = document.getElementById('mpegh-vv-streaming-bar');
+      try {
+        this._showStatus('Hooking audio stream from MPEG-H VVPlayer...');
+        let stream = null;
+        
+        // 1. Try desktopCapturer sources if in desktop mode
+        if (window.desktopAPI?.getMpeghSources) {
+          const sources = await window.desktopAPI.getMpeghSources();
+          const mpegh = sources.find(s => s.isMpegh);
+          const chosen = mpegh || sources[0];
+          
+          if (chosen) {
+            try {
+              stream = await navigator.mediaDevices.getUserMedia({
+                audio: {
+                  mandatory: {
+                    chromeMediaSource: 'desktop',
+                    chromeMediaSourceId: chosen.id
+                  }
+                },
+                video: {
+                  mandatory: {
+                    chromeMediaSource: 'desktop',
+                    chromeMediaSourceId: chosen.id,
+                    maxWidth: 2,
+                    maxHeight: 2
+                  }
+                }
+              });
+            } catch (err) {
+              console.warn('[App] Direct desktop media source error, falling back to display media:', err);
+            }
+          }
+        }
+        
+        // 2. Fallback to getDisplayMedia with audio
+        if (!stream) {
+          stream = await navigator.mediaDevices.getDisplayMedia({
+            video: true,
+            audio: true
+          });
+        }
+        
+        if (stream && stream.getAudioTracks().length > 0) {
+          stream.getVideoTracks().forEach(t => t.stop());
+          
+          // Connect stream into AudioEngine
+          this.engine.connectLiveMediaStream(stream, 'stereo');
+          
+          if (streamingBar) streamingBar.style.display = 'flex';
+          this._updatePlayButton(true);
+          this._showStatus('🟢 Streaming Live Audio from MPEG-H VVPlayer');
+          
+          stream.getAudioTracks()[0].onended = () => {
+            this.engine.disconnectLiveStream();
+            if (streamingBar) streamingBar.style.display = 'none';
+            this._updatePlayButton(false);
+            this._showStatus('MPEG-H VV Live stream ended');
+            setTimeout(() => this._showStatus('Ready'), 2000);
+          };
+        } else {
+          this._showStatus('⚠️ No audio track found in captured stream. Ensure system/window audio sharing was checked!');
+          setTimeout(() => this._showStatus('Ready'), 3000);
+        }
+      } catch (err) {
+        console.error('[App] Audio hook failed:', err);
+        this._showStatus(`⚠️ Audio hook cancelled or failed: ${err.message}`);
+        setTimeout(() => this._showStatus('Ready'), 3000);
+      }
+    });
+
+    document.getElementById('btn-disconnect-mpegh-audio')?.addEventListener('click', () => {
+      this.engine.disconnectLiveStream();
+      const streamingBar = document.getElementById('mpegh-vv-streaming-bar');
+      if (streamingBar) streamingBar.style.display = 'none';
+      this._updatePlayButton(false);
+      this._showStatus('MPEG-H VV stream disconnected');
+      setTimeout(() => this._showStatus('Ready'), 2000);
+    });
+
     // Head Tracking Enable/Disable toggle (for standard earbuds/headphones)
     const trackingEnableToggle = document.getElementById('tracking-enable-toggle');
     trackingEnableToggle?.addEventListener('change', (e) => {

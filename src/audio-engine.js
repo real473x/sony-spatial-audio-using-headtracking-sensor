@@ -543,9 +543,113 @@ export class AudioEngine {
     if (this.sourceNode && this.isPlaying) {
       try { this.sourceNode.stop(); } catch(e) { /* ignore */ }
     }
+    if (this.liveMediaStream) {
+      try { this.liveMediaStream.getTracks().forEach(t => t.stop()); } catch(_) {}
+      this.liveMediaStream = null;
+    }
+    this.isLiveStream = false;
     this.isPlaying = false;
     this.pauseOffset = 0;
     this._cleanup();
+  }
+
+  /**
+   * Connect a live external audio stream (e.g. from Fraunhofer MPEG-H VVPlayer via desktop audio capture)
+   * into the spatial audio engine, routing channels through the virtual speaker ring and analyser.
+   * @param {MediaStream} mediaStream
+   * @param {string} [preferredLayout='stereo']
+   */
+  connectLiveMediaStream(mediaStream, preferredLayout = 'stereo') {
+    this.stop();
+    this._initAudioContext();
+    if (this.audioContext.state === 'suspended') {
+      this.audioContext.resume();
+    }
+    
+    this.liveMediaStream = mediaStream;
+    this.isLiveStream = true;
+    const ctx = this.audioContext;
+    
+    this.sourceNode = ctx.createMediaStreamSource(mediaStream);
+    
+    const target = (this.targetLayout && this.targetLayout !== 'auto' && SPEAKER_LAYOUTS[this.targetLayout])
+      ? this.targetLayout 
+      : (preferredLayout || 'stereo');
+    this.layout = SPEAKER_LAYOUTS[target] || SPEAKER_LAYOUTS['stereo'];
+    const layoutChannels = this.layout.length;
+    
+    this.channelConfigs = this.layout.map(sp => ({
+      name: sp.name,
+      volume: 1.0,
+      enabled: true,
+      gainDb: 0
+    }));
+    
+    this.splitter = ctx.createChannelSplitter(Math.max(2, layoutChannels));
+    this.sourceNode.connect(this.splitter);
+    
+    this.panners = [];
+    this.gains = [];
+    this.channelLevels = new Array(layoutChannels).fill(0);
+    this._channelAnalysers = [];
+    
+    for (let i = 0; i < layoutChannels; i++) {
+      const speaker = this.layout[i];
+      if (speaker.isHeight) {
+        if (speaker.baseElevation === undefined) speaker.baseElevation = speaker.elevation;
+        speaker.elevation = speaker.baseElevation * this.topSpeakerHeightScale;
+      }
+      if (speaker.baseDistance === undefined) speaker.baseDistance = speaker.distance;
+      speaker.distance = speaker.baseDistance * this.speakerScale;
+      const pos = speakerToCartesian(speaker.azimuth, speaker.elevation, speaker.distance);
+      
+      const gain = ctx.createGain();
+      gain.gain.value = 1.0;
+      
+      const panner = ctx.createPanner();
+      panner.panningModel = 'HRTF';
+      panner.distanceModel = 'inverse';
+      panner.refDistance = 1;
+      panner.maxDistance = 10;
+      panner.rolloffFactor = 1;
+      panner.coneInnerAngle = 360;
+      panner.coneOuterAngle = 0;
+      panner.coneOuterGain = 0;
+      panner.positionX.setValueAtTime(pos.x, ctx.currentTime);
+      panner.positionY.setValueAtTime(pos.y, ctx.currentTime);
+      panner.positionZ.setValueAtTime(pos.z, ctx.currentTime);
+      
+      const channelAnalyser = ctx.createAnalyser();
+      channelAnalyser.fftSize = 256;
+      
+      gain.connect(channelAnalyser);
+      if (speaker.name === 'LFE' || speaker.isLFE) {
+        channelAnalyser.connect(this.masterGain);
+      } else {
+        channelAnalyser.connect(panner);
+        panner.connect(this.masterGain);
+      }
+      
+      this.panners.push(panner);
+      this.gains.push(gain);
+      this._channelAnalysers.push(channelAnalyser);
+      
+      try {
+        this.splitter.connect(gain, i % 2);
+      } catch (_) {}
+    }
+    
+    this.isPlaying = true;
+    this.duration = Infinity;
+    this.pauseOffset = 0;
+    
+    if (this._levelInterval) clearInterval(this._levelInterval);
+    this._levelInterval = setInterval(() => this._updateLevels(), 50);
+    console.log(`[AudioEngine] Live media stream hooked into layout: ${target} (${layoutChannels} channels)`);
+  }
+
+  disconnectLiveStream() {
+    this.stop();
   }
 
   seek(time) {

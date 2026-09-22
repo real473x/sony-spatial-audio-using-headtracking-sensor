@@ -631,6 +631,32 @@
         </button>
       </div>
 
+      <!-- ─── Fraunhofer MPEG-H VV Live Audio Stream Card ───────────────── -->
+      <div class="card" id="mpegh-vv-card">
+        <div class="card-header-toggle" style="display: flex; align-items: center; justify-content: space-between;">
+          <div class="card-title" style="margin-bottom: 0;">🎧 MPEG-H VV Live Stream</div>
+          <span class="slider-value" id="mpegh-vv-status-badge" style="color: var(--accent-success); font-family: var(--font-mono); font-size: 11px;">Checking...</span>
+        </div>
+        <div style="font-size: 11px; color: var(--text-muted); margin-top: 6px; line-height: 1.5;">
+          Hook Fraunhofer IIS MPEG-H VVPlayer audio directly into SpatialAudio with real-time 3D visualizer and head-tracking.
+        </div>
+        <div style="display: flex; gap: 8px; margin-top: 10px;">
+          <button class="action-btn primary" id="btn-hook-mpegh-audio" style="flex: 1; font-size: 11px; padding: 7px 10px;" title="Capture and stream live audio from MPEG-H VVPlayer">
+            🎙️ Hook Live Audio
+          </button>
+          <button class="action-btn secondary" id="btn-launch-mpegh-vv" style="flex: 1; font-size: 11px; padding: 7px 10px;" title="Launch official Fraunhofer MPEG-H VVPlayer">
+            🚀 Launch VVPlayer
+          </button>
+        </div>
+        <div id="mpegh-vv-streaming-bar" style="display: none; margin-top: 8px; padding: 8px 10px; background: rgba(16, 185, 129, 0.12); border: 1px solid rgba(16, 185, 129, 0.3); border-radius: var(--radius-sm); font-size: 11px; color: var(--accent-success); align-items: center; justify-content: space-between;">
+          <span>🟢 Live Audio Streaming Active</span>
+          <button id="btn-disconnect-mpegh-audio" style="background: none; border: none; color: #f43f5e; cursor: pointer; font-size: 11px; font-weight: 600;">Disconnect</button>
+        </div>
+        <div style="font-size: 10px; color: var(--text-muted); margin-top: 6px;">
+          📡 Head orientation is broadcast via OpenTrack UDP (127.0.0.1:4242) to synchronize VVPlayer in tandem.
+        </div>
+      </div>
+
       <!-- Info / Credits -->
       <div class="card">
         <div class="card-title">Decoders &amp; Formats</div>

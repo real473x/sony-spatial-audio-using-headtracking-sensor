@@ -1,4 +1,4 @@
-const { app, BrowserWindow, Tray, Menu, ipcMain, nativeImage, dialog, shell } = require('electron');
+const { app, BrowserWindow, Tray, Menu, ipcMain, nativeImage, dialog, shell, desktopCapturer, session } = require('electron');
 const path = require('path');
 const http = require('http');
 const { spawn, exec, execSync } = require('child_process');
@@ -437,6 +437,23 @@ async function createWindow() {
 
   mainWindow.loadURL(SERVER_URL);
 
+  // Configure display media request handler to stream audio loopback without blocking prompts
+  if (session.defaultSession && session.defaultSession.setDisplayMediaRequestHandler) {
+    session.defaultSession.setDisplayMediaRequestHandler((request, callback) => {
+      desktopCapturer.getSources({ types: ['window', 'screen'] }).then((sources) => {
+        const mpegh = sources.find(s => 
+          s.name.toLowerCase().includes('mpeg-h') || 
+          s.name.toLowerCase().includes('vvplayer') || 
+          s.name.toLowerCase().includes('fraunhofer')
+        );
+        const chosen = mpegh || sources[0];
+        callback({ video: chosen, audio: 'loopback' });
+      }).catch(() => {
+        callback({});
+      });
+    });
+  }
+
   mainWindow.once('ready-to-show', () => {
     mainWindow.show();
   });
@@ -496,6 +513,48 @@ ipcMain.on('open-bluetooth-settings', () => {
 
 ipcMain.handle('scan-devices', () => {
   return scanConnectedAudioDevices();
+});
+
+// ─── MPEG-H VVPlayer Integration & Audio Stream Hooking ───────────────────────
+const MPEGH_VV_PATH = 'C:\\Program Files\\Fraunhofer IIS\\MPEG-H VVPlayer\\MPEG-H VVPlayer.exe';
+
+ipcMain.handle('get-mpegh-status', () => {
+  const isInstalled = fs.existsSync(MPEGH_VV_PATH);
+  const isRunning = isProcessRunning('MPEG-H VVPlayer.exe');
+  return { isInstalled, isRunning, path: MPEGH_VV_PATH };
+});
+
+ipcMain.handle('open-mpegh-vv', async (event, filePath) => {
+  if (!fs.existsSync(MPEGH_VV_PATH)) {
+    return { success: false, error: 'MPEG-H VVPlayer not found at ' + MPEGH_VV_PATH };
+  }
+  const args = filePath ? [filePath] : [];
+  try {
+    const child = spawn(MPEGH_VV_PATH, args, { detached: true, stdio: 'ignore' });
+    child.unref();
+    console.log(`[Desktop] Launched MPEG-H VVPlayer (PID: ${child.pid})`);
+    return { success: true, pid: child.pid };
+  } catch (err) {
+    console.warn('[Desktop] Could not launch MPEG-H VVPlayer:', err.message);
+    return { success: false, error: err.message };
+  }
+});
+
+ipcMain.handle('get-mpegh-sources', async () => {
+  try {
+    const sources = await desktopCapturer.getSources({
+      types: ['window', 'screen'],
+      fetchWindowIcons: true
+    });
+    return sources.map(s => ({
+      id: s.id,
+      name: s.name,
+      isMpegh: s.name.toLowerCase().includes('mpeg-h') || s.name.toLowerCase().includes('vvplayer') || s.name.toLowerCase().includes('fraunhofer')
+    }));
+  } catch (err) {
+    console.error('[Desktop] Failed to get desktop capture sources:', err);
+    return [];
+  }
 });
 
 // ─── 7. In-Process WinMM Audio & Bluetooth Endpoint Scanner ───────────────────

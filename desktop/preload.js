@@ -31,5 +31,10 @@ contextBridge.exposeInMainWorld('desktopAPI', {
   // Head tracking & playback trigger from system tray
   onTrayAction: (callback) => {
     ipcRenderer.on('tray-action', (event, action) => callback(action));
-  }
+  },
+
+  // MPEG-H VVPlayer Integration & Audio Stream Hooking
+  getMpeghStatus: () => ipcRenderer.invoke('get-mpegh-status'),
+  openMpeghVv: (filePath) => ipcRenderer.invoke('open-mpegh-vv', filePath),
+  getMpeghSources: () => ipcRenderer.invoke('get-mpegh-sources')
 });
