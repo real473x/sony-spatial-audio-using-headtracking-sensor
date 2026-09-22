@@ -93,7 +93,7 @@ const Win32SonyHidTracker = require('./win32-hid-tracker');
 
 let udpClient = null;
 let nativeTracker = null;
-let activeTrackerMode = 'direct'; // 'direct' (Approach B) or 'bridge' (Approach A)
+let activeTrackerMode = 'bridge'; // 'bridge' (Approach A - Recommended) or 'direct' (Approach B - Experimental)
 
 function initUdpClient() {
   if (!udpClient) {

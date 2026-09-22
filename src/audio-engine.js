@@ -130,6 +130,72 @@ const SPEAKER_LAYOUTS = {
     { name: 'Top Rear Right',    azimuth:  145, elevation: 45, distance: 2.2, shortName: 'TRR', isHeight: true },
     { name: 'Top Middle Left',   azimuth: -90,  elevation: 55, distance: 2.2, shortName: 'TML', isHeight: true },
     { name: 'Top Middle Right',  azimuth:  90,  elevation: 55, distance: 2.2, shortName: 'TMR', isHeight: true }
+  ],
+  // ─── Ultra-High-Definition Layout: 22.2 (NHK / SMPTE 2036-2 UHD Audio) ────
+  '22.2': [
+    // Bottom / Floor Layer (Elevation -25°, 3 channels)
+    { name: 'Bottom Front Left',    azimuth: -30,  elevation: -25, distance: 2.0, shortName: 'BFL', isBottom: true },
+    { name: 'Bottom Front Center',  azimuth:   0,  elevation: -25, distance: 2.0, shortName: 'BFC', isBottom: true },
+    { name: 'Bottom Front Right',   azimuth:  30,  elevation: -25, distance: 2.0, shortName: 'BFR', isBottom: true },
+    // Middle / Ear-Level Layer (Elevation 0°, 10 channels)
+    { name: 'Front Left',           azimuth: -30,  elevation: 0,   distance: 2.0, shortName: 'FL' },
+    { name: 'Front Right',          azimuth:  30,  elevation: 0,   distance: 2.0, shortName: 'FR' },
+    { name: 'Center',               azimuth:   0,  elevation: 0,   distance: 2.0, shortName: 'C' },
+    { name: 'Front Left Center',    azimuth: -15,  elevation: 0,   distance: 2.0, shortName: 'FLC' },
+    { name: 'Front Right Center',   azimuth:  15,  elevation: 0,   distance: 2.0, shortName: 'FRC' },
+    { name: 'Side Left',            azimuth: -90,  elevation: 0,   distance: 2.0, shortName: 'SL' },
+    { name: 'Side Right',           azimuth:  90,  elevation: 0,   distance: 2.0, shortName: 'SR' },
+    { name: 'Back Left',            azimuth: -150, elevation: 0,   distance: 2.0, shortName: 'BL' },
+    { name: 'Back Center',          azimuth:  180, elevation: 0,   distance: 2.0, shortName: 'BC' },
+    { name: 'Back Right',           azimuth:  150, elevation: 0,   distance: 2.0, shortName: 'BR' },
+    // Top / Ceiling Layer (Elevation +40° to +85°, 9 channels)
+    { name: 'Top Front Left',       azimuth: -35,  elevation: 40,  distance: 2.2, shortName: 'TFL', isHeight: true },
+    { name: 'Top Front Center',     azimuth:   0,  elevation: 40,  distance: 2.2, shortName: 'TFC', isHeight: true },
+    { name: 'Top Front Right',      azimuth:  35,  elevation: 40,  distance: 2.2, shortName: 'TFR', isHeight: true },
+    { name: 'Top Side Left',        azimuth: -90,  elevation: 40,  distance: 2.2, shortName: 'TSL', isHeight: true },
+    { name: 'Top Side Right',       azimuth:  90,  elevation: 40,  distance: 2.2, shortName: 'TSR', isHeight: true },
+    { name: 'Top Back Left',        azimuth: -145, elevation: 40,  distance: 2.2, shortName: 'TBL', isHeight: true },
+    { name: 'Top Back Center',      azimuth:  180, elevation: 40,  distance: 2.2, shortName: 'TBC', isHeight: true },
+    { name: 'Top Back Right',       azimuth:  145, elevation: 40,  distance: 2.2, shortName: 'TBR', isHeight: true },
+    { name: 'Top Center (Zenith)',  azimuth:   0,  elevation: 85,  distance: 2.2, shortName: 'TC',  isHeight: true },
+    // Subwoofer LFE Layer (2 Subwoofers)
+    { name: 'LFE 1 (Front Sub)',    azimuth: -15,  elevation: 0,   distance: 1.1, shortName: 'LFE1', isLFE: true },
+    { name: 'LFE 2 (Rear Sub)',     azimuth: 165,  elevation: 0,   distance: 1.1, shortName: 'LFE2', isLFE: true }
+  ],
+  // ─── Dolby AC-4 Object-Based Configurations ────────────────────────────────
+  'ac4-core-objects': [
+    { name: 'Dialog / Speech (Center)',   azimuth:   0, elevation: 0,  distance: 2.0, shortName: 'OBJ-DIA', isObject: true },
+    { name: 'Dynamic Object 1 (Front L)', azimuth: -45, elevation: 15, distance: 2.1, shortName: 'OBJ-1',   isObject: true },
+    { name: 'Dynamic Object 2 (Front R)', azimuth:  45, elevation: 15, distance: 2.1, shortName: 'OBJ-2',   isObject: true },
+    { name: 'Dynamic Object 3 (Side L)',  azimuth: -105,elevation: 0,  distance: 2.2, shortName: 'OBJ-3',   isObject: true },
+    { name: 'Dynamic Object 4 (Side R)',  azimuth:  105,elevation: 0,  distance: 2.2, shortName: 'OBJ-4',   isObject: true },
+    { name: 'Dynamic Object 5 (Top L)',   azimuth: -40, elevation: 50, distance: 2.3, shortName: 'OBJ-5',   isHeight: true, isObject: true },
+    { name: 'Dynamic Object 6 (Top R)',   azimuth:  40, elevation: 50, distance: 2.3, shortName: 'OBJ-6',   isHeight: true, isObject: true }
+  ],
+  'ac4-advanced-objects': [
+    // 7.1.4 Bed (12 channels)
+    { name: 'Front Left',                 azimuth: -30,  elevation: 0,  distance: 2.0, shortName: 'FL' },
+    { name: 'Front Right',                azimuth:  30,  elevation: 0,  distance: 2.0, shortName: 'FR' },
+    { name: 'Center',                     azimuth:   0,  elevation: 0,  distance: 2.0, shortName: 'C' },
+    { name: 'LFE',                        azimuth:   0,  elevation: 0,  distance: 1.1, shortName: 'LFE', isLFE: true },
+    { name: 'Back Left',                  azimuth: -150, elevation: 0,  distance: 2.0, shortName: 'BL' },
+    { name: 'Back Right',                 azimuth:  150, elevation: 0,  distance: 2.0, shortName: 'BR' },
+    { name: 'Side Left',                  azimuth: -90,  elevation: 0,  distance: 2.0, shortName: 'SL' },
+    { name: 'Side Right',                 azimuth:  90,  elevation: 0,  distance: 2.0, shortName: 'SR' },
+    { name: 'Top Front Left',             azimuth: -35,  elevation: 45, distance: 2.2, shortName: 'TFL', isHeight: true },
+    { name: 'Top Front Right',            azimuth:  35,  elevation: 45, distance: 2.2, shortName: 'TFR', isHeight: true },
+    { name: 'Top Rear Left',              azimuth: -145, elevation: 45, distance: 2.2, shortName: 'TRL', isHeight: true },
+    { name: 'Top Rear Right',             azimuth:  145, elevation: 45, distance: 2.2, shortName: 'TRR', isHeight: true },
+    // 4 Dynamic 3D Objects
+    { name: 'Dynamic Object A (Free 3D)', azimuth: -60,  elevation: 25, distance: 2.3, shortName: 'DYN-A', isObject: true },
+    { name: 'Dynamic Object B (Free 3D)', azimuth:  60,  elevation: 25, distance: 2.3, shortName: 'DYN-B', isObject: true },
+    { name: 'Dynamic Object C (Zenith)',  azimuth:   0,  elevation: 75, distance: 2.4, shortName: 'DYN-C', isHeight: true, isObject: true },
+    { name: 'Dynamic Object D (Flyby)',   azimuth: 180,  elevation: 35, distance: 2.4, shortName: 'DYN-D', isHeight: true, isObject: true }
+  ],
+  // ─── Dolby AC-4 Headphone / Portable Configuration (AC-4 IMS) ──────────────
+  'ac4-ims': [
+    { name: 'IMS Left Binaural Space',    azimuth: -75,  elevation: 0,  distance: 1.8, shortName: 'IMS-L', isVirtual: true },
+    { name: 'IMS Right Binaural Space',   azimuth:  75,  elevation: 0,  distance: 1.8, shortName: 'IMS-R', isVirtual: true }
   ]
 };
 
@@ -380,11 +446,13 @@ export class AudioEngine {
     } else if (channels === 1) {
       this.layout = SPEAKER_LAYOUTS['mono'];
     } else if (channels === 2) {
-      this.layout = SPEAKER_LAYOUTS['stereo'];
+      this.layout = (this.targetLayout === 'ac4-ims') ? SPEAKER_LAYOUTS['ac4-ims'] : SPEAKER_LAYOUTS['stereo'];
     } else if (channels === 4) {
       this.layout = SPEAKER_LAYOUTS['4.0'];
     } else if (channels === 6) {
       this.layout = SPEAKER_LAYOUTS['5.1'];
+    } else if (channels === 7) {
+      this.layout = SPEAKER_LAYOUTS['ac4-core-objects'];
     } else if (channels === 8) {
       this.layout = (this.targetLayout === '5.1.2') ? SPEAKER_LAYOUTS['5.1.2'] : SPEAKER_LAYOUTS['7.1'];
     } else if (channels === 10) {
@@ -394,7 +462,9 @@ export class AudioEngine {
     } else if (channels === 14) {
       this.layout = SPEAKER_LAYOUTS['9.1.4'];
     } else if (channels === 16) {
-      this.layout = SPEAKER_LAYOUTS['9.1.6'];
+      this.layout = (this.targetLayout === 'ac4-advanced-objects') ? SPEAKER_LAYOUTS['ac4-advanced-objects'] : SPEAKER_LAYOUTS['9.1.6'];
+    } else if (channels === 24) {
+      this.layout = SPEAKER_LAYOUTS['22.2'];
     } else {
       // Fallback: distribute channels evenly
       this.layout = [];

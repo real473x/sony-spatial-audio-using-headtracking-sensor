@@ -5,7 +5,7 @@
  * Handles UI events, file loading, and playback state.
  */
 
-import { AudioEngine } from './audio-engine.js';
+import { AudioEngine, SPEAKER_LAYOUTS } from './audio-engine.js';
 import { HeadTracker } from './head-tracker.js';
 import { Visualizer } from './visualizer.js';
 
@@ -2047,21 +2047,29 @@ class App {
   }
 
   _getLayoutChannelCount(layout) {
-    const counts = {
-      '7.1.4': 12,
-      '7.1.2': 10,
-      '5.1.4': 10,
-      '5.1.2': 8,
-      '7.1': 8,
-      '5.1': 6,
-      '9.1.6': 16,
-      '9.1.4': 14,
-      '4.0': 4,
-      'stereo': 2
-    };
     if (layout === 'auto') {
       return this.engine?.layout ? this.engine.layout.length : 'Native';
     }
+    if (SPEAKER_LAYOUTS && SPEAKER_LAYOUTS[layout]) {
+      return SPEAKER_LAYOUTS[layout].length;
+    }
+    const counts = {
+      'mono': 1,
+      'stereo': 2,
+      'ac4-ims': 2,
+      '4.0': 4,
+      '5.1': 6,
+      'ac4-core-objects': 7,
+      '5.1.2': 8,
+      '7.1': 8,
+      '5.1.4': 10,
+      '7.1.2': 10,
+      '7.1.4': 12,
+      '9.1.4': 14,
+      '9.1.6': 16,
+      'ac4-advanced-objects': 16,
+      '22.2': 24,
+    };
     return counts[layout] || 12;
   }
 }

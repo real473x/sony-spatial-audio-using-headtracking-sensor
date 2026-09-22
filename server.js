@@ -246,16 +246,21 @@ app.post('/api/decode-atmos', async (req, res) => {
 
     // Map UI layout IDs to FFmpeg channel_layout names and channel counts
     const LAYOUT_MAP = {
-      'stereo':  { ffmpegLayout: 'stereo', channels: 2  },
-      '4.0':     { ffmpegLayout: 'quad',   channels: 4  },
-      '5.1':     { ffmpegLayout: '5.1',    channels: 6  },
-      '7.1':     { ffmpegLayout: '7.1',    channels: 8  },
-      '5.1.2':   { ffmpegLayout: '5.1.2',  channels: 8  },
-      '5.1.4':   { ffmpegLayout: '5.1.4',  channels: 10 },
-      '7.1.2':   { ffmpegLayout: '7.1.2',  channels: 10 },
-      '7.1.4':   { ffmpegLayout: '7.1.4',  channels: 12 },
-      '9.1.4':   { ffmpegLayout: '9.1.4',  channels: 14 },
-      '9.1.6':   { ffmpegLayout: '9.1.6',  channels: 16 },
+      'mono':                 { ffmpegLayout: 'mono',   channels: 1  },
+      'stereo':               { ffmpegLayout: 'stereo', channels: 2  },
+      'ac4-ims':              { ffmpegLayout: 'stereo', channels: 2  },
+      '4.0':                  { ffmpegLayout: 'quad',   channels: 4  },
+      '5.1':                  { ffmpegLayout: '5.1',    channels: 6  },
+      'ac4-core-objects':     { ffmpegLayout: null,     channels: 7  },
+      '7.1':                  { ffmpegLayout: '7.1',    channels: 8  },
+      '5.1.2':                { ffmpegLayout: '5.1.2',  channels: 8  },
+      '5.1.4':                { ffmpegLayout: '5.1.4',  channels: 10 },
+      '7.1.2':                { ffmpegLayout: '7.1.2',  channels: 10 },
+      '7.1.4':                { ffmpegLayout: '7.1.4',  channels: 12 },
+      '9.1.4':                { ffmpegLayout: '9.1.4',  channels: 14 },
+      '9.1.6':                { ffmpegLayout: '9.1.6',  channels: 16 },
+      'ac4-advanced-objects': { ffmpegLayout: null,     channels: 16 },
+      '22.2':                 { ffmpegLayout: '22.2',   channels: 24 },
     };
 
     const runCustomAC4 = (args) => new Promise((resolve, reject) => {

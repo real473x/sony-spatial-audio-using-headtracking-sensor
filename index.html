@@ -579,16 +579,36 @@
         </div>
         <select id="channel-layout-select" style="width: 100%; padding: 8px 12px; border-radius: var(--radius-sm); background: var(--bg-input); color: var(--text-primary); border: 1px solid var(--border-subtle); font-size: 12px; font-family: var(--font-sans); cursor: pointer; outline: none; transition: border-color var(--transition-fast);">
           <option value="auto" selected>Auto (Native File Channels — Recommended)</option>
-          <option value="7.1.4">7.1.4 Dolby Atmos (12ch: 7 Bed + LFE + 4 Heights)</option>
-          <option value="7.1.2">7.1.2 Dolby Atmos (10ch: 7 Bed + LFE + 2 Heights)</option>
-          <option value="5.1.4">5.1.4 Dolby Atmos (10ch: 5 Bed + LFE + 4 Heights)</option>
-          <option value="5.1.2">5.1.2 Dolby Atmos (8ch: 5 Bed + LFE + 2 Heights)</option>
-          <option value="7.1">7.1 Surround (8ch: 7 Bed + LFE)</option>
-          <option value="5.1">5.1 Surround (6ch: 5 Bed + LFE)</option>
-          <option value="9.1.6">9.1.6 Dolby Atmos (16ch: 9 Bed + LFE + 6 Heights)</option>
-          <option value="9.1.4">9.1.4 Dolby Atmos (14ch: 9 Bed + LFE + 4 Heights)</option>
-          <option value="4.0">4.0 Quadraphonic (4ch: Quad Bed)</option>
-          <option value="stereo">2.0 Stereo (2ch: Binaural Front L/R)</option>
+          
+          <optgroup label="Dolby Atmos &amp; Immersive Beds (Ceiling Heights)">
+            <option value="7.1.4">7.1.4 Dolby Atmos (12ch: 7 Bed + LFE + 4 Heights — Gold Standard)</option>
+            <option value="7.1.2">7.1.2 Dolby Atmos (10ch: 7 Bed + LFE + 2 Heights)</option>
+            <option value="5.1.4">5.1.4 Dolby Atmos (10ch: 5 Bed + LFE + 4 Heights)</option>
+            <option value="5.1.2">5.1.2 Dolby Atmos (8ch: 5 Bed + LFE + 2 Heights)</option>
+            <option value="9.1.6">9.1.6 Dolby Atmos (16ch: 9 Bed + LFE + 6 Heights)</option>
+            <option value="9.1.4">9.1.4 Dolby Atmos (14ch: 9 Bed + LFE + 4 Heights)</option>
+          </optgroup>
+
+          <optgroup label="Dolby AC-4 Dynamic Objects &amp; IMS Virtualizer">
+            <option value="ac4-core-objects">AC-4 Core Objects (7ch: Dialog Center + 6 Dynamic 3D Objects)</option>
+            <option value="ac4-advanced-objects">AC-4 Advanced Immersive Objects (16ch: 7.1.4 Bed + 4 Dynamic Objects)</option>
+            <option value="ac4-ims">AC-4 IMS Immersive Stereo (2ch: Binaural 3D Headphone Virtualizer)</option>
+          </optgroup>
+
+          <optgroup label="Ultra-High-Definition Layouts (NHK / SMPTE)">
+            <option value="22.2">22.2 UHD Spatial (24ch: 3 Floor + 10 Middle + 9 Ceiling + 2 LFE Subs)</option>
+          </optgroup>
+
+          <optgroup label="Standard &amp; Extended Surround">
+            <option value="7.1">7.1 Extended Surround (8ch: 7 Bed + LFE w/ Back Surrounds)</option>
+            <option value="5.1">5.1 Standard Surround (6ch: FL, FR, C, LFE, SL, SR)</option>
+            <option value="4.0">4.0 Quadraphonic (4ch: Quad Bed)</option>
+          </optgroup>
+
+          <optgroup label="Stereo &amp; Mono">
+            <option value="stereo">2.0 Stereo (2ch: Left &amp; Right)</option>
+            <option value="mono">1.0 Mono (1ch: Center)</option>
+          </optgroup>
         </select>
         <div style="font-size: 11px; color: var(--text-muted); margin-top: 6px; line-height: 1.5;">
           Decoded directly via FFmpeg into spatial binaural channels.

@@ -109,6 +109,15 @@ export class Visualizer {
         heightSpeaker: '#c084fc',
         heightSpeakerGlow: 'rgba(192, 132, 252, 0.7)',
         heightText: 'rgba(233, 213, 255, 0.95)',
+        bottomSpeaker: '#06b6d4',
+        bottomSpeakerGlow: 'rgba(6, 182, 212, 0.65)',
+        bottomText: 'rgba(103, 232, 249, 0.95)',
+        objectSpeaker: '#f43f5e',
+        objectSpeakerGlow: 'rgba(244, 63, 94, 0.7)',
+        objectText: 'rgba(253, 164, 175, 0.95)',
+        virtualSpeaker: '#38bdf8',
+        virtualSpeakerGlow: 'rgba(56, 189, 248, 0.65)',
+        virtualText: 'rgba(125, 211, 252, 0.95)',
         head: '#22d3ee',
         headGlow: 'rgba(34, 211, 238, 0.4)',
         cone: 'rgba(34, 211, 238, 0.08)',
@@ -140,6 +149,15 @@ export class Visualizer {
         heightSpeaker: '#9333ea',
         heightSpeakerGlow: 'rgba(147, 51, 234, 0.52)',
         heightText: '#6b21a8',
+        bottomSpeaker: '#0891b2',
+        bottomSpeakerGlow: 'rgba(8, 145, 178, 0.5)',
+        bottomText: '#0e7490',
+        objectSpeaker: '#e11d48',
+        objectSpeakerGlow: 'rgba(225, 29, 72, 0.55)',
+        objectText: '#be123c',
+        virtualSpeaker: '#0284c7',
+        virtualSpeakerGlow: 'rgba(2, 132, 199, 0.5)',
+        virtualText: '#0369a1',
         head: '#0284c7',
         headGlow: 'rgba(2, 132, 199, 0.32)',
         cone: 'rgba(2, 132, 199, 0.07)',
@@ -1225,6 +1243,9 @@ export class Visualizer {
     for (const { sp, proj, level } of renderList) {
       const isLFE      = sp.isLFE || sp.name === 'LFE';
       const isHeight   = !!sp.isHeight;
+      const isBottom   = !!sp.isBottom;
+      const isObject   = !!sp.isObject;
+      const isVirtual  = !!sp.isVirtual;
       const isSoloed   = hasSolo && this.soloedChannels.has(sp.index);
       const isMutedBySolo = hasSolo && !isSoloed;
       const pulse      = Math.sin(this.time * 3 + sp.index) * 0.5 + 0.5;
@@ -1261,14 +1282,41 @@ export class Visualizer {
           sp.pos3D.x, sp.pos3D.y, sp.pos3D.z,
           stemColor, level > 0.05 ? 2 : 1.5, [4, 3]
         );
+      } else if (isBottom) {
+        // ── Bottom / Floor speaker (e.g. 22.2 layout): draw vertical stem down from floor ───
+        const floorProj = this._project(sp.pos3D.x, 0, sp.pos3D.z);
+        if (floorProj.inFront !== false) {
+          ctx.beginPath();
+          ctx.arc(floorProj.x, floorProj.y, Math.max(2, 2.5 * scaleMult), 0, Math.PI * 2);
+          ctx.fillStyle = this.colors.bottomSpeakerGlow || 'rgba(6, 182, 212, 0.4)';
+          ctx.fill();
+        }
+
+        const stemColor = level > 0.05 ? (this.colors.bottomSpeakerGlow || 'rgba(6, 182, 212, 0.8)') : (this.colors.stem || 'rgba(6, 182, 212, 0.35)');
+        this._drawLine3D(
+          sp.pos3D.x, 0, sp.pos3D.z,
+          sp.pos3D.x, sp.pos3D.y, sp.pos3D.z,
+          stemColor, level > 0.05 ? 2 : 1.5, [2, 3]
+        );
+      } else if (isObject && Math.abs(sp.pos3D.y) > 0.1) {
+        // ── Dynamic 3D Object with elevation: draw connecting guideline ───
+        this._drawLine3D(
+          sp.pos3D.x, 0, sp.pos3D.z,
+          sp.pos3D.x, sp.pos3D.y, sp.pos3D.z,
+          this.colors.objectSpeakerGlow || 'rgba(244, 63, 94, 0.4)',
+          1, [2, 4]
+        );
       }
 
       // ── Glow halo ──────────────────────────────────────────────────────────────
-      const baseSize = isLFE ? 7 : isHeight ? 5.5 : 5.5;
+      const baseSize = isLFE ? 7 : (isHeight || isBottom || isObject) ? 5.5 : 5.5;
       const size     = baseSize * scaleMult;
       const glowSize = size + (10 + level * 15 + pulse * 2.5) * scaleMult;
 
       const glowColor = isSoloed   ? 'rgba(0, 240, 255, 0.85)'
+                      : isObject   ? (level > 0.08 ? this.colors.objectSpeakerGlow : 'rgba(244, 63, 94, 0.35)')
+                      : isBottom   ? (level > 0.08 ? this.colors.bottomSpeakerGlow : 'rgba(6, 182, 212, 0.35)')
+                      : isVirtual  ? (level > 0.08 ? this.colors.virtualSpeakerGlow : 'rgba(56, 189, 248, 0.35)')
                       : isLFE      ? this.colors.subwooferGlow
                       : isHeight   ? (level > 0.08 ? this.colors.heightSpeakerGlow : this.colors.stem)
                       :              (level > 0.08 ? this.colors.speakerActiveGlow : this.colors.speakerGlow);
@@ -1302,7 +1350,59 @@ export class Visualizer {
       }
 
       // ── Speaker shape ──────────────────────────────────────────────────────────
-      if (isHeight) {
+      if (isObject) {
+        // ✦ Hexagonal Dynamic Audio Object Beacon with orbital ring
+        const sides = 6;
+        ctx.beginPath();
+        for (let s = 0; s < sides; s++) {
+          const a = (s / sides) * Math.PI * 2 + (this.time * 1.2);
+          const r = size * 1.15;
+          const px = proj.x + Math.cos(a) * r;
+          const py = proj.y + Math.sin(a) * r;
+          if (s === 0) ctx.moveTo(px, py);
+          else ctx.lineTo(px, py);
+        }
+        ctx.closePath();
+        ctx.fillStyle = isSoloed ? '#00f0ff' : (level > 0.08 ? '#ffe4e6' : this.colors.objectSpeaker);
+        ctx.fill();
+        ctx.strokeStyle = isSoloed ? '#ffffff' : '#fb7185';
+        ctx.lineWidth = 1.5;
+        ctx.stroke();
+
+        // Pulsing dynamic orbit ring around active object
+        ctx.beginPath();
+        ctx.arc(proj.x, proj.y, (size * 1.7) + Math.sin(this.time * 4 + sp.index) * 2, 0, Math.PI * 2);
+        ctx.strokeStyle = `rgba(244, 63, 94, ${(0.35 + level * 0.45).toFixed(2)})`;
+        ctx.lineWidth = 1;
+        ctx.setLineDash([2, 3]);
+        ctx.stroke();
+        ctx.setLineDash([]);
+      } else if (isBottom) {
+        // ▼ Inverted triangle for bottom / floor speakers (22.2 layout)
+        ctx.beginPath();
+        ctx.moveTo(proj.x - size * 1.1, proj.y - size * 0.85);
+        ctx.lineTo(proj.x + size * 1.1, proj.y - size * 0.85);
+        ctx.lineTo(proj.x,              proj.y + size * 1.15);
+        ctx.closePath();
+        ctx.fillStyle = isSoloed ? '#00f0ff' : (level > 0.08 ? '#cffafe' : this.colors.bottomSpeaker);
+        ctx.fill();
+        ctx.strokeStyle = isSoloed ? '#ffffff' : 'rgba(255,255,255,0.75)';
+        ctx.lineWidth = isSoloed ? 2 : 1;
+        ctx.stroke();
+      } else if (isVirtual) {
+        // 🎧 Binaural Virtual Space circle with dashed crossfeed boundary ring
+        ctx.beginPath();
+        ctx.arc(proj.x, proj.y, size + level * 4 * scaleMult, 0, Math.PI * 2);
+        ctx.fillStyle = isSoloed ? '#00f0ff' : (level > 0.08 ? '#38bdf8' : this.colors.virtualSpeaker);
+        ctx.fill();
+        ctx.beginPath();
+        ctx.arc(proj.x, proj.y, (size + 4) * scaleMult, 0, Math.PI * 2);
+        ctx.strokeStyle = '#38bdf8';
+        ctx.lineWidth = 1.5;
+        ctx.setLineDash([3, 3]);
+        ctx.stroke();
+        ctx.setLineDash([]);
+      } else if (isHeight) {
         // ◆ Diamond for overhead speakers
         ctx.beginPath();
         ctx.moveTo(proj.x,          proj.y - size * 1.3);
@@ -1316,7 +1416,7 @@ export class Visualizer {
         ctx.lineWidth   = isSoloed ? 2 : 1;
         ctx.stroke();
       } else {
-        // ● Circle for floor speakers
+        // ● Circle for standard ear-level speakers
         ctx.beginPath();
         ctx.arc(proj.x, proj.y, size + level * 4 * scaleMult, 0, Math.PI * 2);
         ctx.fillStyle = isSoloed ? '#00f0ff'
@@ -1343,6 +1443,18 @@ export class Visualizer {
         ctx.fillStyle = this.colors.subText;
         ctx.font = `600 ${fontSize}px "Inter", sans-serif`;
         ctx.fillText('LFE', proj.x, labelY);
+      } else if (isObject) {
+        ctx.fillStyle = this.colors.objectText;
+        ctx.font = `700 ${fontSize}px "Inter", sans-serif`;
+        ctx.fillText(`✦ ${sp.shortName || sp.name}`, proj.x, labelY);
+      } else if (isBottom) {
+        ctx.fillStyle = this.colors.bottomText;
+        ctx.font = `700 ${fontSize}px "Inter", sans-serif`;
+        ctx.fillText(`▼ ${sp.shortName || sp.name}`, proj.x, labelY);
+      } else if (isVirtual) {
+        ctx.fillStyle = this.colors.virtualText;
+        ctx.font = `700 ${fontSize}px "Inter", sans-serif`;
+        ctx.fillText(`🎧 ${sp.shortName || sp.name}`, proj.x, labelY);
       } else if (isHeight) {
         ctx.fillStyle = this.colors.heightText;
         ctx.font = `700 ${fontSize}px "Inter", sans-serif`;
