@@ -64,12 +64,17 @@ A standalone Windows desktop application packages the entire stack into a single
 | **RAM Usage** | ~120 – 180 MB | ~30 – 50 MB |
 | **Win32 OS APIs** | Native Node.js C-FFI (`koffi`), Win32 window APIs. | Full Rust Windows API crates (`windows-rs`). |
 
-### Background Daemon Management (OpenTrack & Sony Tracker)
-Unlike a browser tab, a native desktop application can supervise the entire head-tracking toolchain automatically:
-* On launch, inspect the Windows process table for `sony-head-tracker.exe` and `OpenTrack.exe`.
-* If not running, silently spawn them in the background (minimized or to the system tray).
-* Monitor their health and automatically restart them if disconnected.
-* On SpatialAudio exit, cleanly terminate background helper processes to free Bluetooth telemetry and UDP ports.
+### Background Daemon Management & Direct Sensor Access (Approach B & Approach A)
+Unlike a browser tab, the native desktop application provides **direct sensor access** and automatic supervision:
+* **Approach B (Primary — In-Process Win32 Direct HID Driver)**:
+  - Connects directly to the Windows HID stack (`hid.dll`, `setupapi.dll`, `kernel32.dll`) via `koffi` running in a dedicated Node.js `worker_threads` worker.
+  - Automatically identifies Sony WF-1000XM5 / WH-1000XM5 via Usage Page `0x0020` and Usage `0x00E1` (`#AndroidHeadTracker#1.0`).
+  - Transmits the 40-byte wake Feature Report #1 (`HidP_SetScaledUsageValue` interval 40ms, `HidP_SetUsages` Full Power & All Events reporting).
+  - Reads raw 14-byte input reports asynchronously, calculates normalized quaternions and Euler angles (yaw, pitch, roll), and streams them with zero external GUI windows.
+* **Approach A (Fallback — Silent Headless Background Bridge)**:
+  - If direct Win32 HID access encounters driver isolation, the desktop app automatically falls back to `sony-head-tracker.exe bridge --port 4242` with `windowsHide: true`.
+  - Runs completely silent and invisible in the background with zero taskbar or window footprint.
+* On SpatialAudio exit, cleanly terminates all workers, UDP handles, and child processes to release Bluetooth telemetry and system resources.
 
 ### Integration with Fraunhofer MPEG-H VVPlayer
 Because Fraunhofer's MPEG-H 3D decoder is compiled statically inside `MPEG-H VVPlayer.exe` (without exposing an exportable C DLL API), running as a Windows desktop application provides Win32 window automation:

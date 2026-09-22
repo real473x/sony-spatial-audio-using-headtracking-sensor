@@ -86,7 +86,34 @@ async function ensureServerRunning() {
   console.warn('[Desktop] Server did not respond within 5 seconds, proceeding anyway...');
 }
 
-// ─── 3. Background Helper Supervisor (sony-head-tracker) ──────────────────────
+// ─── 3. Head Tracker Supervisors (Approach B: Native HID / Approach A: Headless Bridge) ─
+
+const dgram = require('dgram');
+const Win32SonyHidTracker = require('./win32-hid-tracker');
+
+let udpClient = null;
+let nativeTracker = null;
+let activeTrackerMode = 'direct'; // 'direct' (Approach B) or 'bridge' (Approach A)
+
+function initUdpClient() {
+  if (!udpClient) {
+    udpClient = dgram.createSocket('udp4');
+  }
+}
+
+function sendOpenTrackPacket(yaw, pitch, roll, tx = 0, ty = 0, tz = 0) {
+  try {
+    initUdpClient();
+    const buf = Buffer.alloc(48);
+    buf.writeDoubleLE(tx, 0);
+    buf.writeDoubleLE(ty, 8);
+    buf.writeDoubleLE(tz, 16);
+    buf.writeDoubleLE(yaw, 24);
+    buf.writeDoubleLE(pitch, 32);
+    buf.writeDoubleLE(roll, 40);
+    udpClient.send(buf, 0, 48, 4242, '127.0.0.1');
+  } catch (_) {}
+}
 
 function isProcessRunning(exeName) {
   try {
@@ -128,31 +155,128 @@ function findTrackerExecutable() {
   return null;
 }
 
-function autoStartHeadTracker() {
+function startNativeHidTracker() {
+  if (nativeTracker) return true;
+  console.log('[Desktop] Starting Approach B: Native Win32 HID Direct Driver...');
+  activeTrackerMode = 'direct';
+
+  try {
+    nativeTracker = new Win32SonyHidTracker();
+
+    nativeTracker.on('pose', (pose) => {
+      sendOpenTrackPacket(pose.yaw, pose.pitch, pose.roll);
+      if (mainWindow) {
+        mainWindow.webContents.send('headtracking-pose', pose);
+      }
+    });
+
+    nativeTracker.on('status', (s) => {
+      console.log(`[Desktop] [Native HID] Status: ${s.state} - ${s.message || ''}`);
+      if (mainWindow) {
+        mainWindow.webContents.send('tracker-status-change', { mode: 'direct', ...s });
+      }
+    });
+
+    nativeTracker.on('error', (err) => {
+      console.warn(`[Desktop] [Native HID] Error: ${err.message}. Falling back to Approach A...`);
+      fallbackToHeadlessBridge();
+    });
+
+    nativeTracker.start();
+    return true;
+  } catch (err) {
+    console.warn('[Desktop] Native tracker start failed, falling back to Approach A:', err.message);
+    fallbackToHeadlessBridge();
+    return false;
+  }
+}
+
+function fallbackToHeadlessBridge() {
+  if (nativeTracker) {
+    nativeTracker.stop();
+    nativeTracker = null;
+  }
+  startHeadlessBridge();
+}
+
+function startHeadlessBridge() {
+  activeTrackerMode = 'bridge';
   const exeName = 'sony-head-tracker.exe';
   if (isProcessRunning(exeName)) {
-    console.log(`[Desktop] ${exeName} is already running in background.`);
+    console.log(`[Desktop] ${exeName} is already running.`);
     return true;
   }
 
   const trackerPath = findTrackerExecutable();
   if (trackerPath) {
-    console.log(`[Desktop] Launching background head tracker: ${trackerPath}`);
+    console.log(`[Desktop] Starting Approach A: Silent headless bridge (${trackerPath} bridge --port 4242)...`);
     try {
-      spawnedTrackerProcess = spawn(trackerPath, [], {
-        detached: true,
+      spawnedTrackerProcess = spawn(trackerPath, ['bridge', '--port', '4242'], {
+        windowsHide: true,
         stdio: 'ignore'
       });
-      spawnedTrackerProcess.unref();
-      console.log(`[Desktop] Head tracker started (PID: ${spawnedTrackerProcess.pid})`);
+      console.log(`[Desktop] Silent headless bridge started (PID: ${spawnedTrackerProcess.pid})`);
       return true;
     } catch (err) {
-      console.warn('[Desktop] Could not launch head tracker:', err.message);
+      console.warn('[Desktop] Could not launch headless bridge:', err.message);
       return false;
     }
   } else {
-    console.log(`[Desktop] Head tracker not found in 'tools/' or configured path. User can set location via menu.`);
+    console.log(`[Desktop] Head tracker executable not found for fallback.`);
     return false;
+  }
+}
+
+function autoStartHeadTracker() {
+  // Try Approach B (Native Win32 direct HID) first
+  if (activeTrackerMode === 'direct') {
+    return startNativeHidTracker();
+  } else {
+    return startHeadlessBridge();
+  }
+}
+
+function recenterHeadTracker() {
+  if (nativeTracker) {
+    nativeTracker.recenter();
+  }
+  if (mainWindow) {
+    mainWindow.webContents.send('tray-action', 'recenter');
+  }
+}
+
+function cleanUpProcesses() {
+  if (serverProcess) {
+    console.log('[Desktop] Stopping internal server process...');
+    try {
+      serverProcess.kill();
+    } catch (_) {}
+    serverProcess = null;
+  }
+
+  if (nativeTracker) {
+    console.log('[Desktop] Stopping Native Win32 HID tracker...');
+    try {
+      nativeTracker.stop();
+    } catch (_) {}
+    nativeTracker = null;
+  }
+
+  if (spawnedTrackerProcess) {
+    console.log('[Desktop] Stopping background bridge process...');
+    try {
+      if (process.platform === 'win32') {
+        exec(`taskkill /pid ${spawnedTrackerProcess.pid} /f /t`);
+      } else {
+        spawnedTrackerProcess.kill();
+      }
+    } catch (_) {}
+    spawnedTrackerProcess = null;
+  }
+
+  if (udpClient) {
+    try { udpClient.close(); } catch (_) {}
+    udpClient = null;
   }
 }
 
@@ -179,28 +303,6 @@ async function promptUserForTrackerPath() {
     return selectedPath;
   }
   return null;
-}
-
-function cleanUpProcesses() {
-  if (serverProcess) {
-    console.log('[Desktop] Stopping internal server process...');
-    try {
-      serverProcess.kill();
-    } catch (_) {}
-    serverProcess = null;
-  }
-
-  if (spawnedTrackerProcess) {
-    console.log('[Desktop] Stopping background head tracker...');
-    try {
-      if (process.platform === 'win32') {
-        exec(`taskkill /pid ${spawnedTrackerProcess.pid} /f /t`);
-      } else {
-        spawnedTrackerProcess.kill();
-      }
-    } catch (_) {}
-    spawnedTrackerProcess = null;
-  }
 }
 
 // ─── 4. Tray Icon & Menu ──────────────────────────────────────────────────────
@@ -236,9 +338,7 @@ function setupTray() {
     {
       label: '🎯 Recenter Head Tracking (R)',
       click: () => {
-        if (mainWindow) {
-          mainWindow.webContents.send('tray-action', 'recenter');
-        }
+        recenterHeadTracker();
       }
     },
     {
@@ -250,6 +350,31 @@ function setupTray() {
       }
     },
     { type: 'separator' },
+    {
+      label: '⚙️ Head Tracker Mode',
+      submenu: [
+        {
+          label: 'Direct Win32 HID (Approach B - Experimental)',
+          type: 'radio',
+          checked: activeTrackerMode === 'direct',
+          click: () => {
+            if (spawnedTrackerProcess) {
+              try { exec(`taskkill /pid ${spawnedTrackerProcess.pid} /f /t`); } catch (_) {}
+              spawnedTrackerProcess = null;
+            }
+            startNativeHidTracker();
+          }
+        },
+        {
+          label: 'Silent Background Bridge (Approach A - Stable Fallback)',
+          type: 'radio',
+          checked: activeTrackerMode === 'bridge',
+          click: () => {
+            fallbackToHeadlessBridge();
+          }
+        }
+      ]
+    },
     {
       label: '📁 Select Head Tracker (.exe)...',
       click: () => {
