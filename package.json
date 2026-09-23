@@ -4,9 +4,10 @@
   "description": "Universal head-tracked spatial audio player for Windows via OpenTrack (tested on Sony WF-1000XM5)",
   "main": "desktop/main.js",
   "scripts": {
-    "start": "node server.js",
+    "start": "electron .",
     "desktop": "electron .",
     "desktop:dev": "electron .",
+    "web": "node server.js",
     "dist": "electron-builder --win",
     "dist:portable": "electron-builder --win portable"
   },

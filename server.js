@@ -462,15 +462,26 @@ app.post('/api/decode-atmos', async (req, res) => {
 
 app.use(express.static(path.join(__dirname)));
 app.listen(HTTP_PORT, () => {
-  console.log(`\n  🎧 SpatialAudio Player`);
-  console.log(`  ─────────────────────────────────────`);
-  console.log(`  🌐 Web UI:      http://localhost:${HTTP_PORT}`);
-  console.log(`  📡 WebSocket:   ws://localhost:${WS_PORT}`);
-  console.log(`  🎯 UDP Listen:  ${UDP_HOST}:${UDP_PORT}`);
-  console.log(`  🎬 FFmpeg:      ${ffmpegAvailable ? '✅ Available (multichannel bed decoder active)' : '❌ Not found (Install via: winget install Gyan.FFmpeg)'}`);
-  console.log(`  🦀 OpenJOC:     ${openjocAvailable ? `✅ Available (${openjocPath} - 7.1.4 Rust objects active)` : '⚪ Not found (Optional: Place openjoc.exe in tools/)'}`);
-  console.log(`  🌌 Cavernize:   ${cavernAvailable ? `✅ Available (${cavernPath} - 7.1.4 objects active)` : '⚪ Not found (Optional: Place Cavernize.exe in tools/)'}`);
-  console.log(`  ─────────────────────────────────────\n`);
+  const isDesktop = process.env.ELECTRON_RUN_AS_NODE === '1';
+  if (isDesktop) {
+    console.log(`\n  🖥️ SpatialAudio Desktop Engine (Native Window)`);
+    console.log(`  ─────────────────────────────────────`);
+    console.log(`  ⚡ Mode:        Native Windows Application`);
+    console.log(`  🎯 UDP Listen:  ${UDP_HOST}:${UDP_PORT} (OpenTrack Head Tracker)`);
+    console.log(`  📡 WebSocket:   127.0.0.1:${WS_PORT} (Internal Bridge)`);
+    console.log(`  🎬 FFmpeg:      ${ffmpegAvailable ? '✅ Available (Multichannel Engine active)' : '❌ Not found'}`);
+    console.log(`  ─────────────────────────────────────\n`);
+  } else {
+    console.log(`\n  🎧 SpatialAudio Player`);
+    console.log(`  ─────────────────────────────────────`);
+    console.log(`  🌐 Web UI:      http://localhost:${HTTP_PORT}`);
+    console.log(`  📡 WebSocket:   ws://localhost:${WS_PORT}`);
+    console.log(`  🎯 UDP Listen:  ${UDP_HOST}:${UDP_PORT}`);
+    console.log(`  🎬 FFmpeg:      ${ffmpegAvailable ? '✅ Available (multichannel bed decoder active)' : '❌ Not found (Install via: winget install Gyan.FFmpeg)'}`);
+    console.log(`  🦀 OpenJOC:     ${openjocAvailable ? `✅ Available (${openjocPath} - 7.1.4 Rust objects active)` : '⚪ Not found (Optional: Place openjoc.exe in tools/)'}`);
+    console.log(`  🌌 Cavernize:   ${cavernAvailable ? `✅ Available (${cavernPath} - 7.1.4 objects active)` : '⚪ Not found (Optional: Place Cavernize.exe in tools/)'}`);
+    console.log(`  ─────────────────────────────────────\n`);
+  }
 });
 
 // ─── WebSocket Server (sends head tracking data to browser) ─────────────────
