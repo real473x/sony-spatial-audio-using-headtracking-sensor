@@ -41,8 +41,10 @@ function saveSettings(settings) {
     const dir = path.dirname(getSettingsPath());
     if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
     fs.writeFileSync(getSettingsPath(), JSON.stringify(settings, null, 2), 'utf8');
+    return true;
   } catch (err) {
     console.error('[Desktop] Could not save settings:', err.message);
+    return false;
   }
 }
 
@@ -525,6 +527,36 @@ ipcMain.handle('scan-devices', () => {
   return scanConnectedAudioDevices();
 });
 
+ipcMain.handle('get-gpu-preference', () => {
+  const preference = loadSettings().gpuPreference;
+  return {
+    supported: process.platform === 'win32',
+    preference: ['auto', 'integrated', 'dedicated'].includes(preference) ? preference : 'auto',
+    activePreference: startupGpuPreference
+  };
+});
+
+ipcMain.handle('set-gpu-preference', (_event, preference) => {
+  if (!['auto', 'integrated', 'dedicated'].includes(preference)) {
+    throw new TypeError('Invalid GPU preference');
+  }
+  if (process.platform !== 'win32') {
+    throw new Error('GPU preference is only supported on Windows');
+  }
+
+  const settings = loadSettings();
+  settings.gpuPreference = preference;
+  if (!saveSettings(settings)) {
+    throw new Error('Could not save the GPU preference');
+  }
+  return { preference, activePreference: startupGpuPreference };
+});
+
+ipcMain.on('restart-app', () => {
+  app.relaunch();
+  app.exit(0);
+});
+
 ipcMain.handle('restart-tracker', () => {
   console.log('[Desktop] Restarting head tracker supervisor...');
   if (spawnedTrackerProcess) {
@@ -698,6 +730,20 @@ if (process.platform === 'win32') {
   app.setAppUserModelId('com.spatialaudio.player');
 }
 
+let startupGpuPreference = 'auto';
+if (process.platform === 'win32') {
+  const savedPreference = loadSettings().gpuPreference;
+  if (['auto', 'integrated', 'dedicated'].includes(savedPreference)) {
+    startupGpuPreference = savedPreference;
+  }
+  if (startupGpuPreference === 'integrated') {
+    app.commandLine.appendSwitch('force_low_power_gpu');
+  } else if (startupGpuPreference === 'dedicated') {
+    app.commandLine.appendSwitch('force_high_performance_gpu');
+  }
+  console.log(`[Desktop] GPU preference: ${startupGpuPreference}`);
+}
+
 const gotTheLock = app.requestSingleInstanceLock();
 if (!gotTheLock) {
   // Another instance is already running; exit immediately
@@ -800,4 +846,3 @@ ipcMain.handle('joc-select-file', async () => {
   }
   return null;
 });
-

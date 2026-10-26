@@ -19,6 +19,9 @@ Thumbs.db
 # Media & Sample files
 sample_atmos_5.1.m4a
 
+# Local AI project context cache
+/PROJECT_CONTEXT.md
+
 # Tools folder: track the directory itself via .gitkeep, but ignore all contents inside
 tools/*
 !tools/.gitkeep

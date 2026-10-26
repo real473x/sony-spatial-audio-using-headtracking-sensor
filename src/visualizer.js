@@ -69,8 +69,16 @@ export class Visualizer {
     // Virtual room radius in meters (size of the speaker sphere boundary)
     this.roomRadius = 2.0;
 
-    // Real POV Mode (45° Human Eye FOV): locks POV to front, display acts as user front eye
+    // First-person stage view: the listener position becomes the camera origin.
     this.povFollowSensor = false;
+    this.walkableSceneMode = false;
+    this.scene = 'living-room';
+    this.scenes = {
+      'living-room': { title: 'Living room', hint: 'HOME CINEMA · ACTIVE SPEAKER POSITIONS', width: 5.4, depth: 6.5, open: false },
+      cinema: { title: 'Cinema hall', hint: 'IMMERSIVE THEATRE · ACTIVE SPEAKER POSITIONS', width: 10, depth: 16, open: false },
+      concert: { title: 'Open-air concert', hint: 'LIVE EVENT · ACTIVE SPEAKER POSITIONS', width: 18, depth: 20, open: true },
+      studio: { title: 'Reference studio', hint: 'NEARFIELD ROOM · ACTIVE SPEAKER POSITIONS', width: 5, depth: 6, open: false }
+    };
 
     // Solo Calibration channels (Set of channel indices 0..N-1)
     this.soloedChannels = new Set();
@@ -94,10 +102,19 @@ export class Visualizer {
     this.themes = {
       dark: {
         bg: '#06060f',
-        floor: 'rgba(80, 100, 255, 0.05)',
-        floorRim: 'rgba(100, 120, 255, 0.28)',
-        floorGrid: 'rgba(100, 120, 255, 0.10)',
-        floorAxisLine: 'rgba(100, 120, 255, 0.14)',
+        bgTop: '#0b1020',
+        bgGlow: 'rgba(34, 211, 238, 0.1)',
+        roomWall: 'rgba(55, 83, 142, 0.12)',
+        roomEdge: 'rgba(116, 151, 230, 0.3)',
+        roomGrid: 'rgba(118, 153, 226, 0.12)',
+        roomFloor: 'rgba(41, 65, 110, 0.24)',
+        floor: 'rgba(80, 100, 255, 0.07)',
+        floorRim: 'rgba(100, 150, 255, 0.42)',
+        floorGrid: 'rgba(123, 151, 255, 0.14)',
+        floorAxisLine: 'rgba(122, 168, 255, 0.22)',
+        hudBg: 'rgba(10, 15, 30, 0.78)',
+        hudBorder: 'rgba(148, 163, 220, 0.18)',
+        hudText: 'rgba(220, 230, 255, 0.88)',
         ceiling: 'rgba(192, 132, 252, 0.08)',
         ceilRim: 'rgba(192, 132, 252, 0.22)',
         stem: 'rgba(192, 132, 252, 0.35)',
@@ -134,10 +151,19 @@ export class Visualizer {
       },
       light: {
         bg: '#f8fafc',
-        floor: 'rgba(99, 102, 241, 0.04)',
-        floorRim: 'rgba(99, 102, 241, 0.28)',
-        floorGrid: 'rgba(99, 102, 241, 0.10)',
-        floorAxisLine: 'rgba(99, 102, 241, 0.15)',
+        bgTop: '#eef3ff',
+        bgGlow: 'rgba(14, 165, 233, 0.09)',
+        roomWall: 'rgba(79, 70, 229, 0.055)',
+        roomEdge: 'rgba(79, 70, 229, 0.36)',
+        roomGrid: 'rgba(79, 70, 229, 0.2)',
+        roomFloor: 'rgba(99, 102, 241, 0.08)',
+        floor: 'rgba(99, 102, 241, 0.06)',
+        floorRim: 'rgba(79, 70, 229, 0.38)',
+        floorGrid: 'rgba(79, 70, 229, 0.13)',
+        floorAxisLine: 'rgba(79, 70, 229, 0.2)',
+        hudBg: 'rgba(255, 255, 255, 0.84)',
+        hudBorder: 'rgba(100, 116, 139, 0.22)',
+        hudText: '#334155',
         ceiling: 'rgba(147, 51, 234, 0.05)',
         ceilRim: 'rgba(147, 51, 234, 0.22)',
         stem: 'rgba(147, 51, 234, 0.30)',
@@ -172,6 +198,7 @@ export class Visualizer {
         guideLine: 'rgba(2, 132, 199, 0.26)',
         hint: 'rgba(2, 132, 199, 0.9)',
       }
+
     };
     this.colors = this.themes.light;
 
@@ -185,6 +212,52 @@ export class Visualizer {
   setTheme(theme) {
     this.theme = theme;
     this.colors = this.themes[theme] || this.themes.light;
+  }
+
+  setScene(scene) {
+    if (!Object.hasOwn(this.scenes, scene)) {
+      throw new RangeError(`Unknown listening scene: ${scene}`);
+    }
+    this.scene = scene;
+    if (this.walkableSceneMode) {
+      this._clampListenerToScene();
+    }
+    return this.scenes[scene];
+  }
+
+  setWalkableSceneMode(enabled) {
+    this.walkableSceneMode = !!enabled;
+    if (this.walkableSceneMode) {
+      this._clampListenerToScene();
+    }
+  }
+
+  _sceneGeometry() {
+    const scene = this.scenes[this.scene];
+    return {
+      halfWidth: scene.width / 2,
+      halfDepth: scene.depth / 2,
+      floorY: -1.15,
+      ceilingY: this.scene === 'cinema' ? 4.8 : this.scene === 'concert' ? 7 : 1.7
+    };
+  }
+
+  _clampListenerToScene() {
+    const { halfWidth, halfDepth, floorY, ceilingY } = this._sceneGeometry();
+    const margin = 0.4;
+    const x = Math.max(-halfWidth + margin, Math.min(halfWidth - margin, this.listenerMX));
+    const z = Math.max(-halfDepth + margin, Math.min(halfDepth - margin, this.listenerMZ));
+    const y = Math.max(floorY + 0.15, Math.min(ceilingY - 0.15, this.listenerMY));
+    if (x !== this.listenerMX || y !== this.listenerMY || z !== this.listenerMZ) {
+      this.listenerMX = x;
+      this.listenerMY = y;
+      this.listenerMZ = z;
+      this.listenerX = x;
+      this.listenerY = z;
+      if (this._onListenerMove) {
+        this._onListenerMove(x, y, z);
+      }
+    }
   }
 
   setSpeakers(layout) {
@@ -230,7 +303,9 @@ export class Visualizer {
 
   setAllowOutsideBoundary(allowed) {
     this.allowOutsideBoundary = !!allowed;
-    if (!this.allowOutsideBoundary) {
+    if (this.walkableSceneMode) {
+      this._clampListenerToScene();
+    } else if (!this.allowOutsideBoundary) {
       const R = this.roomRadius;
       const dist = Math.hypot(this.listenerMX, this.listenerMZ);
       if (dist > R) {
@@ -259,7 +334,7 @@ export class Visualizer {
       });
     }
     // If listener is now outside the new boundary, pull it back in
-    if (!this.allowOutsideBoundary) {
+    if (!this.walkableSceneMode && !this.allowOutsideBoundary) {
       const dist = Math.hypot(this.listenerMX, this.listenerMZ);
       if (dist > this.roomRadius) {
         this.listenerMX = (this.listenerMX / dist) * this.roomRadius;
@@ -312,7 +387,13 @@ export class Visualizer {
     let my = meterZ !== undefined ? meterY : this.listenerMY;
     let mz = meterZ !== undefined ? meterZ : meterY;
 
-    if (!this.allowOutsideBoundary) {
+    if (this.walkableSceneMode) {
+      const { halfWidth, halfDepth, floorY, ceilingY } = this._sceneGeometry();
+      const margin = 0.4;
+      mx = Math.max(-halfWidth + margin, Math.min(halfWidth - margin, mx));
+      my = Math.max(floorY + 0.15, Math.min(ceilingY - 0.15, my));
+      mz = Math.max(-halfDepth + margin, Math.min(halfDepth - margin, mz));
+    } else if (!this.allowOutsideBoundary) {
       const R = this.roomRadius;
       const dist = Math.hypot(mx, mz);
       if (dist > R) {
@@ -329,6 +410,17 @@ export class Visualizer {
 
   /** Move listener by horizontal delta (meters). Used by WASD keyboard walking. */
   moveListenerBy(dx, dz) {
+    if (this.walkableSceneMode) {
+      const { halfWidth, halfDepth } = this._sceneGeometry();
+      const margin = 0.4;
+      this.listenerMX = Math.max(-halfWidth + margin, Math.min(halfWidth - margin, this.listenerMX + dx));
+      this.listenerMZ = Math.max(-halfDepth + margin, Math.min(halfDepth - margin, this.listenerMZ + dz));
+      this.listenerX = this.listenerMX;
+      this.listenerY = this.listenerMZ;
+      if (this._onListenerMove) this._onListenerMove(this.listenerMX, this.listenerMY, this.listenerMZ);
+      return;
+    }
+
     const R = this.roomRadius;
     const maxBound = this.allowOutsideBoundary ? 10.0 : R;
     const nx = this.listenerMX + dx;
@@ -349,16 +441,22 @@ export class Visualizer {
 
   /** Move listener POV height by delta (meters). Used by Arrow Up / Down keys. */
   moveListenerHeightBy(dy) {
-    const MIN_H = -1.5;
-    const MAX_H = 2.5;
+    const { floorY, ceilingY } = this.walkableSceneMode
+      ? this._sceneGeometry()
+      : { floorY: -1.5, ceilingY: 2.5 };
+    const MIN_H = this.walkableSceneMode ? floorY + 0.15 : floorY;
+    const MAX_H = this.walkableSceneMode ? ceilingY - 0.15 : ceilingY;
     this.listenerMY = Math.max(MIN_H, Math.min(MAX_H, this.listenerMY + dy));
     if (this._onListenerMove) this._onListenerMove(this.listenerMX, this.listenerMY, this.listenerMZ);
   }
 
   /** Set listener POV height directly (meters). */
   setListenerHeight(meterY) {
-    const MIN_H = -1.5;
-    const MAX_H = 2.5;
+    const { floorY, ceilingY } = this.walkableSceneMode
+      ? this._sceneGeometry()
+      : { floorY: -1.5, ceilingY: 2.5 };
+    const MIN_H = this.walkableSceneMode ? floorY + 0.15 : floorY;
+    const MAX_H = this.walkableSceneMode ? ceilingY - 0.15 : ceilingY;
     this.listenerMY = Math.max(MIN_H, Math.min(MAX_H, meterY));
     if (this._onListenerMove) this._onListenerMove(this.listenerMX, this.listenerMY, this.listenerMZ);
   }
@@ -459,6 +557,33 @@ export class Visualizer {
     };
   }
 
+  _sceneSpeakerPosition(speaker) {
+    const { halfWidth, halfDepth, floorY, ceilingY } = this._sceneGeometry();
+    const az = (speaker.azimuth * Math.PI) / 180;
+    const dirX = Math.sin(az);
+    const dirZ = Math.cos(az);
+    const wallDistance = Math.min(
+      (halfWidth - 0.55) / Math.max(Math.abs(dirX), 0.0001),
+      (halfDepth - 0.55) / Math.max(Math.abs(dirZ), 0.0001)
+    );
+    const radiusScale = speaker.isHeight ? 0.72 : 0.96;
+    const effectiveElevation = (speaker.baseElevation ?? speaker.elevation ?? 0) * this.topSpeakerHeightScale;
+    const heightFraction = Math.max(0, Math.min(1, effectiveElevation / 45));
+    const earLevel = 0.05;
+
+    return {
+      x: dirX * wallDistance * radiusScale,
+      y: speaker.isHeight
+        ? earLevel + (ceilingY - 0.45 - earLevel) * heightFraction
+        : speaker.isBottom
+          ? floorY + 0.28
+          : speaker.isLFE
+            ? floorY + 0.55
+            : earLevel,
+      z: dirZ * wallDistance * radiusScale
+    };
+  }
+
   /**
    * Convert a 3D world coordinate into camera space (relative to listener head position and orientation).
    */
@@ -467,35 +592,58 @@ export class Visualizer {
     const dy = y - (this.listenerMY || 0);
     const dz = z - this.listenerMZ;
 
-    const yawRad   = (this.yaw   * Math.PI) / 180;
-    const pitchRad = (this.pitch * Math.PI) / 180;
-    const rollRad  = (this.roll  * Math.PI) / 180;
+    const camera = this._getPOVCameraCache();
 
     // 1. Rotate around Y (Yaw)
-    const x1 =  dx * Math.cos(yawRad) - dz * Math.sin(yawRad);
+    const x1 =  dx * camera.cosYaw - dz * camera.sinYaw;
     const y1 =  dy;
-    const z1 =  dx * Math.sin(yawRad) + dz * Math.cos(yawRad);
+    const z1 =  dx * camera.sinYaw + dz * camera.cosYaw;
 
     // 2. Rotate around X (Pitch)
     const x2 = x1;
-    const y2 = y1 * Math.cos(pitchRad) - z1 * Math.sin(pitchRad);
-    const z2 = y1 * Math.sin(pitchRad) + z1 * Math.cos(pitchRad);
+    const y2 = y1 * camera.cosPitch - z1 * camera.sinPitch;
+    const z2 = y1 * camera.sinPitch + z1 * camera.cosPitch;
 
     // 3. Rotate around Z (Roll)
-    const camX =  x2 * Math.cos(rollRad) + y2 * Math.sin(rollRad);
-    const camY = -x2 * Math.sin(rollRad) + y2 * Math.cos(rollRad);
+    const camX =  x2 * camera.cosRoll + y2 * camera.sinRoll;
+    const camY = -x2 * camera.sinRoll + y2 * camera.cosRoll;
     const camZ =  z2;
 
     return { camX, camY, camZ };
   }
 
+  _getPOVCameraCache() {
+    const cache = this._povCameraCache;
+    if (cache && cache.yaw === this.yaw && cache.pitch === this.pitch
+      && cache.roll === this.roll && cache.width === this.width) {
+      return cache;
+    }
+
+    const yawRad = (this.yaw * Math.PI) / 180;
+    const pitchRad = (this.pitch * Math.PI) / 180;
+    const rollRad = (this.roll * Math.PI) / 180;
+    const fovRad = (78 * Math.PI) / 180;
+    this._povCameraCache = {
+      yaw: this.yaw,
+      pitch: this.pitch,
+      roll: this.roll,
+      width: this.width,
+      sinYaw: Math.sin(yawRad),
+      cosYaw: Math.cos(yawRad),
+      sinPitch: Math.sin(pitchRad),
+      cosPitch: Math.cos(pitchRad),
+      sinRoll: Math.sin(rollRad),
+      cosRoll: Math.cos(rollRad),
+      focalLength: (this.width / 2) / Math.tan(fovRad / 2)
+    };
+    return this._povCameraCache;
+  }
+
   /**
-   * Project a camera-space point (camX, camY, camZ) to 2D screen coordinates using realistic 45° Human Eye FOV.
+   * Project a camera-space point to screen coordinates with a wide horizontal game-view FOV.
    */
   _camToScreen(camX, camY, camZ) {
-    const fovDeg = 45; // Real Human Eye Focal FOV (~45°)
-    const fovRad = (fovDeg * Math.PI) / 180;
-    const focalLength = (Math.min(this.width, this.height) / 2) / Math.tan(fovRad / 2);
+    const focalLength = this._getPOVCameraCache().focalLength;
 
     return {
       x: this.cx + (camX / camZ) * focalLength,
@@ -507,7 +655,7 @@ export class Visualizer {
 
   /**
    * Unified 3D → 2D projection.
-   * If povFollowSensor is ON: uses 45° First-Person Human Eye perspective from listener head.
+   * If povFollowSensor is ON: uses first-person perspective from listener position.
    * If povFollowSensor is OFF: uses standard 3D isometric orbit camera.
    */
   _project(x, y, z) {
@@ -664,7 +812,7 @@ export class Visualizer {
     const rect = this.canvas.getBoundingClientRect();
     this.canvas.width  = rect.width  * this.dpr;
     this.canvas.height = rect.height * this.dpr;
-    this.ctx.scale(this.dpr, this.dpr);
+    this.ctx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
     this.width  = rect.width;
     this.height = rect.height;
     // Current view of listener in the exact middle of the canvas
@@ -1050,7 +1198,17 @@ export class Visualizer {
     const ctx = this.ctx;
 
     ctx.clearRect(0, 0, this.width, this.height);
-    ctx.fillStyle = this.colors.bg;
+    const backdrop = ctx.createLinearGradient(0, 0, this.width, this.height);
+    backdrop.addColorStop(0, this.colors.bgTop);
+    backdrop.addColorStop(0.58, this.colors.bg);
+    backdrop.addColorStop(1, this.colors.bg);
+    ctx.fillStyle = backdrop;
+    ctx.fillRect(0, 0, this.width, this.height);
+
+    const ambient = ctx.createRadialGradient(this.cx, this.cy, 0, this.cx, this.cy, Math.max(this.width, this.height) * 0.66);
+    ambient.addColorStop(0, this.colors.bgGlow);
+    ambient.addColorStop(1, 'transparent');
+    ctx.fillStyle = ambient;
     ctx.fillRect(0, 0, this.width, this.height);
 
     this._drawRoom();
@@ -1076,11 +1234,18 @@ export class Visualizer {
       ctx.moveTo(floorPts[0].x, floorPts[0].y);
       for (const p of floorPts) ctx.lineTo(p.x, p.y);
       ctx.closePath();
-      ctx.fillStyle = this.colors.floor;
+      const floorGradient = ctx.createRadialGradient(this.cx, this.cy, 0, this.cx, this.cy, this.scale3D * ROOM_R * 1.25);
+      floorGradient.addColorStop(0, this.colors.floor);
+      floorGradient.addColorStop(1, 'rgba(0, 0, 0, 0)');
+      ctx.fillStyle = floorGradient;
       ctx.fill();
+      ctx.save();
+      ctx.shadowColor = this.colors.speakerGlow;
+      ctx.shadowBlur = 18;
       ctx.strokeStyle = this.colors.floorRim;
-      ctx.lineWidth = 1.8;
+      ctx.lineWidth = 1.4;
       ctx.stroke();
+      ctx.restore();
 
       // ── Concentric floor rings (distance reference at 25%, 50%, 75% of ROOM_R) ──
       for (const frac of [0.25, 0.5, 0.75]) {
@@ -1094,6 +1259,24 @@ export class Visualizer {
         ctx.lineWidth = 0.6;
         ctx.stroke();
       }
+
+      // Radial bearings make the floor plane read as a measured listening volume.
+      ctx.save();
+      ctx.strokeStyle = this.colors.floorGrid;
+      ctx.lineWidth = 0.7;
+      ctx.setLineDash([2, 7]);
+      for (let i = 0; i < 12; i++) {
+        const angle = (i / 12) * Math.PI * 2;
+        const endX = Math.sin(angle) * ROOM_R;
+        const endZ = Math.cos(angle) * ROOM_R;
+        const start = this._project(0, 0, 0);
+        const end = this._project(endX, 0, endZ);
+        ctx.beginPath();
+        ctx.moveTo(start.x, start.y);
+        ctx.lineTo(end.x, end.y);
+        ctx.stroke();
+      }
+      ctx.restore();
 
       // ── Extended outer concentric rings (when moving outside boundary is allowed) ──
       if (this.allowOutsideBoundary) {
@@ -1142,30 +1325,14 @@ export class Visualizer {
         ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke();
       }
       ctx.setLineDash([]);
+    } else if (this.walkableSceneMode) {
+      this._drawPOVRoom();
     } else {
-      // ── Real POV Mode (45° First-Person Perspective) ─────────────────────────
-      // Outer floor circle rim
-      this._drawCircle3D(ROOM_R, 0, this.colors.floorRim, 2.0);
-
-      // Concentric distance reference rings
-      for (const frac of [0.25, 0.5, 0.75]) {
-        this._drawCircle3D(ROOM_R * frac, 0, this.colors.floorGrid, 1.0);
-      }
-
-      // Extended outer boundary rings if enabled
-      if (this.allowOutsideBoundary) {
-        for (const frac of [1.5, 2.25, 3.0]) {
-          this._drawCircle3D(ROOM_R * frac, 0, this.colors.floorGrid, 1.0, [4, 6]);
-        }
-      }
-
-      // Floor X/Z axis cross lines
-      this._drawLine3D(-ROOM_R, 0, 0, ROOM_R, 0, 0, this.colors.floorAxisLine, 1.2, [5, 6]);
-      this._drawLine3D(0, 0, -ROOM_R, 0, 0, ROOM_R, this.colors.floorAxisLine, 1.2, [5, 6]);
+      this._drawPOVSphere();
     }
 
     // ── Height layer ceiling ring (shown only when height speakers exist) ──────
-    const hasHeight = this.speakers.some(s => s.isHeight);
+    const hasHeight = !this.povFollowSensor && this.speakers.some(s => s.isHeight);
     if (hasHeight) {
       const effElRad = (45 * this.topSpeakerHeightScale * Math.PI) / 180;
       const heightDist = ROOM_R * 1.1; // ceiling ring slightly wider than floor
@@ -1209,22 +1376,215 @@ export class Visualizer {
     }
 
     // ── Compass labels on floor rim ────────────────────────────────────────────
-    const compassItems = [
-      { label: 'FRONT', x: 0,                z: ROOM_R + 0.28 },
-      { label: 'BACK',  x: 0,                z: -(ROOM_R + 0.28) },
-      { label: 'LEFT',  x: -(ROOM_R + 0.26), z: 0 },
-      { label: 'RIGHT', x: ROOM_R + 0.26,    z: 0 },
-    ];
-    ctx.font = '600 10px "Inter", sans-serif';
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.fillStyle = this.colors.compassText;
-    for (const c of compassItems) {
-      const p = this._project(c.x, 0, c.z);
-      if (p.inFront !== false) {
-        ctx.fillText(c.label, p.x, p.y);
+    if (!this.povFollowSensor) {
+      const compassItems = [
+        { label: 'FRONT', x: 0,                z: ROOM_R + 0.28 },
+        { label: 'BACK',  x: 0,                z: -(ROOM_R + 0.28) },
+        { label: 'LEFT',  x: -(ROOM_R + 0.26), z: 0 },
+        { label: 'RIGHT', x: ROOM_R + 0.26,    z: 0 },
+      ];
+      ctx.font = '600 10px "Inter", sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillStyle = this.colors.compassText;
+      for (const c of compassItems) {
+        const p = this._project(c.x, 0, c.z);
+        if (p.inFront !== false) {
+          ctx.fillText(c.label, p.x, p.y);
+        }
       }
     }
+  }
+
+  _drawPOVSphere() {
+    const radius = this.roomRadius * 1.18;
+    const latitudes = [-60, -30, 0, 30, 60];
+    const longitudes = Array.from({ length: 6 }, (_, i) => i * 60);
+    const drawCurve = (points) => {
+      const ctx = this.ctx;
+      ctx.beginPath();
+      let drawing = false;
+      for (const [x, y, z] of points) {
+        const projected = this._project(x, y, z);
+        if (projected.inFront === false) {
+          drawing = false;
+          continue;
+        }
+        if (drawing) {
+          ctx.lineTo(projected.x, projected.y);
+        } else {
+          ctx.moveTo(projected.x, projected.y);
+          drawing = true;
+        }
+      }
+      ctx.strokeStyle = this.colors.roomEdge;
+      ctx.lineWidth = 0.8;
+      ctx.setLineDash([3, 6]);
+      ctx.stroke();
+      ctx.setLineDash([]);
+    };
+
+    for (const latitude of latitudes) {
+      const lat = latitude * Math.PI / 180;
+      const points = [];
+      for (let i = 0; i <= 36; i++) {
+        const angle = i * Math.PI * 2 / 36;
+        points.push([
+          radius * Math.cos(lat) * Math.sin(angle),
+          radius * Math.sin(lat),
+          radius * Math.cos(lat) * Math.cos(angle)
+        ]);
+      }
+      drawCurve(points);
+    }
+
+    for (const longitude of longitudes) {
+      const lon = longitude * Math.PI / 180;
+      const points = [];
+      for (let i = 0; i <= 36; i++) {
+        const latitude = -Math.PI / 2 + i * Math.PI / 36;
+        points.push([
+          radius * Math.cos(latitude) * Math.sin(lon),
+          radius * Math.sin(latitude),
+          radius * Math.cos(latitude) * Math.cos(lon)
+        ]);
+      }
+      drawCurve(points);
+    }
+  }
+
+  _drawPOVRoom() {
+    const ctx = this.ctx;
+    const scene = this.scenes[this.scene];
+    const { halfWidth, halfDepth, floorY, ceilingY } = this._sceneGeometry();
+    const gridStep = this.scene === 'concert' ? 2 : 1;
+    const warm = this.theme === 'dark' ? 'rgba(255, 184, 105, 0.2)' : 'rgba(194, 99, 28, 0.2)';
+    const accent = this.theme === 'dark' ? '#75dfff' : '#187da8';
+
+    const polygon = (points, fill, stroke = null, lineWidth = 1) => {
+      const projected = points.map(([x, y, z]) => this._project(x, y, z));
+      if (projected.some(point => point.inFront === false)) return;
+      ctx.beginPath();
+      ctx.moveTo(projected[0].x, projected[0].y);
+      for (let i = 1; i < projected.length; i++) ctx.lineTo(projected[i].x, projected[i].y);
+      ctx.closePath();
+      if (fill) {
+        ctx.fillStyle = fill;
+        ctx.fill();
+      }
+      if (stroke) {
+        ctx.strokeStyle = stroke;
+        ctx.lineWidth = lineWidth;
+        ctx.stroke();
+      }
+    };
+    const panel = (x1, x2, y1, y2, z, fill, stroke = null) => {
+      polygon([[x1, y1, z], [x2, y1, z], [x2, y2, z], [x1, y2, z]], fill, stroke);
+    };
+    const line = (x1, y1, z1, x2, y2, z2, color, width = 1, dash = []) => {
+      this._drawLine3D(x1, y1, z1, x2, y2, z2, color, width, dash);
+    };
+    const frontZ = halfDepth - 0.08;
+    const backZ = -halfDepth + 0.08;
+
+    ctx.save();
+    const roomFloor = [
+      [-halfWidth, floorY, backZ], [halfWidth, floorY, backZ],
+      [halfWidth, floorY, frontZ], [-halfWidth, floorY, frontZ]
+    ];
+    polygon(roomFloor, this.colors.roomFloor);
+    if (this.scene === 'living-room') {
+      polygon([[-1.55, floorY + 0.01, -1.5], [1.55, floorY + 0.01, -1.5], [1.55, floorY + 0.01, 1.5], [-1.55, floorY + 0.01, 1.5]],
+        this.theme === 'dark' ? 'rgba(102, 72, 130, 0.16)' : 'rgba(113, 85, 153, 0.13)', this.colors.roomGrid);
+    }
+
+    if (!scene.open) {
+      panel(-halfWidth, halfWidth, floorY, ceilingY, frontZ, this.colors.roomWall);
+      panel(-halfWidth, halfWidth, floorY, ceilingY, backZ, this.colors.roomWall);
+      for (const x of [-halfWidth, halfWidth]) {
+        polygon([[x, floorY, backZ], [x, floorY, frontZ], [x, ceilingY, frontZ], [x, ceilingY, backZ]], this.colors.roomWall);
+        line(x, floorY, backZ, x, ceilingY, backZ, this.colors.roomEdge, 1);
+        line(x, floorY, frontZ, x, ceilingY, frontZ, this.colors.roomEdge, 1);
+        line(x, ceilingY, backZ, x, ceilingY, frontZ, this.colors.roomEdge, 1);
+      }
+      line(-halfWidth, ceilingY, frontZ, halfWidth, ceilingY, frontZ, this.colors.roomEdge, 1);
+      line(-halfWidth, ceilingY, backZ, halfWidth, ceilingY, backZ, this.colors.roomEdge, 1);
+    } else {
+      const sky = ctx.createLinearGradient(0, 0, 0, this.cy);
+      sky.addColorStop(0, this.theme === 'dark' ? 'rgba(41, 52, 105, 0.55)' : 'rgba(82, 142, 199, 0.24)');
+      sky.addColorStop(1, 'transparent');
+      ctx.fillStyle = sky;
+      ctx.fillRect(0, 0, this.width, this.height * 0.62);
+    }
+
+    for (let z = -halfDepth + gridStep; z < halfDepth; z += gridStep) {
+      line(-halfWidth, floorY, z, halfWidth, floorY, z, this.colors.roomGrid, Math.abs(z % 2) < 0.01 ? 1 : 0.65);
+    }
+    for (let x = -halfWidth; x <= halfWidth + 0.01; x += gridStep) {
+      line(x, floorY, backZ, x, floorY, frontZ, this.colors.roomGrid, 0.7);
+    }
+    line(-halfWidth, floorY, frontZ, halfWidth, floorY, frontZ, this.colors.roomEdge, 1);
+    line(-halfWidth, floorY, backZ, halfWidth, floorY, backZ, this.colors.roomEdge, 1);
+
+    if (this.scene === 'living-room') {
+      const wallZ = frontZ - 0.02;
+      panel(-1.25, 1.25, 0.62, 2.08, wallZ, this.theme === 'dark' ? '#111827' : '#243247', accent);
+      panel(-1.14, 1.14, 0.73, 1.97, wallZ - 0.02,
+        this.theme === 'dark' ? 'rgba(20, 52, 77, 0.88)' : 'rgba(42, 102, 133, 0.82)', 'rgba(255,255,255,0.16)');
+      panel(-1.65, 1.65, -0.72, -0.42, -2.45, this.theme === 'dark' ? '#30241f' : '#76533a');
+      panel(-1.78, 1.78, -0.82, -0.7, -2.45, warm);
+      for (const side of [-1, 1]) {
+        panel(side * 2.15, side * 2.48, 0.15, 2.1, -0.05, this.theme === 'dark' ? 'rgba(160, 111, 70, 0.18)' : 'rgba(153, 96, 49, 0.15)');
+        line(side * 2.12, -0.4, backZ + 0.1, side * 2.12, 1.65, backZ + 0.1, warm, 2);
+      }
+    } else if (this.scene === 'cinema') {
+      const wallZ = frontZ - 0.02;
+      panel(-3.6, 3.6, 1.0, 4.25, wallZ, this.theme === 'dark' ? '#090b14' : '#172333', accent);
+      panel(-3.25, 3.25, 1.28, 3.98, wallZ - 0.02, this.theme === 'dark' ? 'rgba(25, 45, 64, 0.96)' : 'rgba(35, 71, 98, 0.94)', 'rgba(195, 224, 255, 0.18)');
+      for (const side of [-1, 1]) {
+        for (let z = -halfDepth + 2; z < halfDepth; z += 2.5) {
+          line(side * (halfWidth - 0.2), 0.25, z, side * (halfWidth - 0.2), 2.6, z, this.colors.roomEdge, 1);
+        }
+        line(side * (halfWidth - 0.4), 1.1, backZ + 0.5, side * (halfWidth - 0.4), 1.1, frontZ - 0.4, warm, 1.4);
+      }
+      for (let z = -halfDepth + 2; z < halfDepth; z += 2) {
+        line(-halfWidth + 1, ceilingY - 0.25, z, halfWidth - 1, ceilingY - 0.25, z, this.colors.roomGrid, 1);
+      }
+      for (const side of [-1, 1]) {
+        for (let z = -halfDepth + 2.5; z < halfDepth - 1; z += 2) {
+          polygon([
+            [side * 2.2, -0.95, z], [side * 3.1, -0.95, z],
+            [side * 3.1, -0.58, z + 0.65], [side * 2.2, -0.58, z + 0.65]
+          ], this.theme === 'dark' ? 'rgba(104, 37, 61, 0.45)' : 'rgba(104, 37, 61, 0.32)', this.colors.roomEdge);
+        }
+      }
+    } else if (this.scene === 'concert') {
+      const stageZ = frontZ - 0.15;
+      panel(-5.4, 5.4, 0.1, 4.5, stageZ, this.theme === 'dark' ? 'rgba(17, 19, 42, 0.96)' : 'rgba(29, 43, 72, 0.92)', accent);
+      for (const x of [-5.8, -3.9, 0, 3.9, 5.8]) {
+        line(x, 0.05, stageZ, x, 7, stageZ, accent, 1.4);
+      }
+      line(-5.8, 6.9, stageZ, 5.8, 6.9, stageZ, accent, 2);
+      line(-5.8, 5.9, stageZ, 5.8, 5.9, stageZ, warm, 1.2);
+      for (const side of [-1, 1]) {
+        const beam = this.theme === 'dark' ? 'rgba(101, 225, 255, 0.12)' : 'rgba(17, 137, 188, 0.12)';
+        polygon([[side * 4.2, 5.9, stageZ], [side * 0.8, 0.2, stageZ - 0.2], [side * 2.2, 0.2, stageZ - 0.2]], beam);
+      }
+      for (let x = -4.8; x <= 4.8; x += 1.6) {
+        line(x, 0.2, stageZ - 0.08, x, 4.8, stageZ - 0.08, this.colors.roomGrid, 0.8);
+      }
+    } else {
+      const wallZ = frontZ - 0.02;
+      for (const x of [-1.8, -0.9, 0, 0.9, 1.8]) {
+        panel(x - 0.34, x + 0.34, 0.15, 2.2, wallZ, this.theme === 'dark' ? 'rgba(71, 82, 109, 0.23)' : 'rgba(58, 82, 122, 0.17)');
+      }
+      panel(-1.9, 1.9, -0.78, -0.56, -2.4, this.theme === 'dark' ? '#202a3d' : '#65758b');
+      for (const side of [-1, 1]) {
+        panel(side * 1.15 - 0.18, side * 1.15 + 0.18, 0.1, 1.75, 0, this.theme === 'dark' ? '#121a26' : '#34485f', accent);
+        panel(side * 1.15 - 0.09, side * 1.15 + 0.09, 0.45, 1.52, -0.02, this.theme === 'dark' ? '#1a2737' : '#526c87', 'rgba(255,255,255,0.25)');
+      }
+    }
+    ctx.restore();
   }
 
   /** Utility: compute projected screen points for a circle at given y (floor height) */
@@ -1240,7 +1600,7 @@ export class Visualizer {
   // ─── Frequency Waveform Ring ─────────────────────────────────────────────────
 
   _drawWaveformRing() {
-    if (!this.analyserData || this.analyserData.length === 0) return;
+    if (this.walkableSceneMode || !this.analyserData || this.analyserData.length === 0) return;
     const ctx = this.ctx;
     const bins  = this.analyserData.length;
     const baseR = this.roomRadius * 1.04; // waveform ring hugs just outside room rim
@@ -1286,17 +1646,18 @@ export class Visualizer {
 
     // Project all speakers and depth-sort (back-to-front)
     const renderList = this.speakers.map((sp, i) => {
-      const proj = this._project(sp.pos3D.x, sp.pos3D.y, sp.pos3D.z);
+      const position = this.walkableSceneMode ? this._sceneSpeakerPosition(sp) : sp.pos3D;
+      const proj = this._project(position.x, position.y, position.z);
       sp.sx = proj.x;
       sp.sy = proj.y;
-      return { sp, proj, level: this.channelLevels[i] || 0 };
+      return { sp, position, proj, level: this.channelLevels[i] || 0 };
     })
     .filter(item => item.proj.inFront !== false)
     .sort((a, b) => b.proj.depth - a.proj.depth);
 
     const hasSolo = (this.soloedChannels && this.soloedChannels.size > 0);
 
-    for (const { sp, proj, level } of renderList) {
+    for (const { sp, position, proj, level } of renderList) {
       const isLFE      = sp.isLFE || sp.name === 'LFE';
       const isHeight   = !!sp.isHeight;
       const isBottom   = !!sp.isBottom;
@@ -1314,7 +1675,7 @@ export class Visualizer {
       // In Real POV mode, scale speaker icon dynamically based on distance to eyes
       let scaleMult = 1.0;
       if (this.povFollowSensor) {
-        scaleMult = Math.max(0.45, Math.min(2.8, 2.0 / Math.max(0.2, proj.depth)));
+        scaleMult = Math.max(0.6, Math.min(3.2, 2.2 / Math.max(0.2, proj.depth)));
       }
       if (isSoloed) {
         scaleMult *= 1.25;
@@ -1322,7 +1683,7 @@ export class Visualizer {
 
       // ── Height speaker: draw vertical stem from floor shadow up to speaker ───
       if (isHeight) {
-        const floorProj = this._project(sp.pos3D.x, 0, sp.pos3D.z);
+        const floorProj = this._project(position.x, 0, position.z);
         if (floorProj.inFront !== false) {
           // Floor shadow dot
           ctx.beginPath();
@@ -1334,13 +1695,13 @@ export class Visualizer {
         // Stem connecting floor to elevated speaker
         const stemColor = level > 0.05 ? this.colors.stemActive : this.colors.stem;
         this._drawLine3D(
-          sp.pos3D.x, 0, sp.pos3D.z,
-          sp.pos3D.x, sp.pos3D.y, sp.pos3D.z,
+          position.x, 0, position.z,
+          position.x, position.y, position.z,
           stemColor, level > 0.05 ? 2 : 1.5, [4, 3]
         );
       } else if (isBottom) {
         // ── Bottom / Floor speaker (e.g. 22.2 layout): draw vertical stem down from floor ───
-        const floorProj = this._project(sp.pos3D.x, 0, sp.pos3D.z);
+        const floorProj = this._project(position.x, 0, position.z);
         if (floorProj.inFront !== false) {
           ctx.beginPath();
           ctx.arc(floorProj.x, floorProj.y, Math.max(2, 2.5 * scaleMult), 0, Math.PI * 2);
@@ -1350,15 +1711,15 @@ export class Visualizer {
 
         const stemColor = level > 0.05 ? (this.colors.bottomSpeakerGlow || 'rgba(6, 182, 212, 0.8)') : (this.colors.stem || 'rgba(6, 182, 212, 0.35)');
         this._drawLine3D(
-          sp.pos3D.x, 0, sp.pos3D.z,
-          sp.pos3D.x, sp.pos3D.y, sp.pos3D.z,
+          position.x, 0, position.z,
+          position.x, position.y, position.z,
           stemColor, level > 0.05 ? 2 : 1.5, [2, 3]
         );
-      } else if (isObject && Math.abs(sp.pos3D.y) > 0.1) {
+      } else if (isObject && Math.abs(position.y) > 0.1) {
         // ── Dynamic 3D Object with elevation: draw connecting guideline ───
         this._drawLine3D(
-          sp.pos3D.x, 0, sp.pos3D.z,
-          sp.pos3D.x, sp.pos3D.y, sp.pos3D.z,
+          position.x, 0, position.z,
+          position.x, position.y, position.z,
           this.colors.objectSpeakerGlow || 'rgba(244, 63, 94, 0.4)',
           1, [2, 4]
         );
@@ -1384,6 +1745,18 @@ export class Visualizer {
       ctx.fillStyle = grad;
       ctx.fill();
 
+      if (this.povFollowSensor && level > 0.04) {
+        const wavePhase = (this.time * 1.1 + sp.index * 0.37) % 1;
+        const waveRadius = size * (1.7 + wavePhase * 2.8);
+        ctx.beginPath();
+        ctx.arc(proj.x, proj.y, waveRadius, 0, Math.PI * 2);
+        ctx.strokeStyle = glowColor;
+        ctx.globalAlpha *= (1 - wavePhase) * Math.min(0.8, level + 0.25);
+        ctx.lineWidth = Math.max(0.7, 1.4 * scaleMult);
+        ctx.stroke();
+        ctx.globalAlpha = isMutedBySolo ? 0.28 : 1;
+      }
+
       // ── Solo Calibration Target HUD Ring ───────────────────────────────────────
       if (isSoloed) {
         const targetRadius = size * 2.2 + Math.sin(this.time * 6) * 3;
@@ -1406,7 +1779,44 @@ export class Visualizer {
       }
 
       // ── Speaker shape ──────────────────────────────────────────────────────────
-      if (isObject) {
+      if (this.povFollowSensor && !isVirtual) {
+        const cabinetWidth = (isLFE ? 16 : 12) * scaleMult;
+        const cabinetHeight = (isLFE ? 22 : 19) * scaleMult;
+        const cabinetX = proj.x - cabinetWidth / 2;
+        const cabinetY = proj.y - cabinetHeight / 2;
+        ctx.fillStyle = this.theme === 'dark' ? '#101827' : '#f8fafc';
+        ctx.strokeStyle = isSoloed ? '#00f0ff'
+          : isLFE ? this.colors.subwoofer
+          : isHeight ? this.colors.heightSpeaker
+          : isObject ? this.colors.objectSpeaker
+          : isBottom ? this.colors.bottomSpeaker
+          : this.colors.speaker;
+        ctx.lineWidth = Math.max(1, scaleMult);
+        ctx.beginPath();
+        if (ctx.roundRect) ctx.roundRect(cabinetX, cabinetY, cabinetWidth, cabinetHeight, 3 * scaleMult);
+        else ctx.rect(cabinetX, cabinetY, cabinetWidth, cabinetHeight);
+        ctx.fill();
+        ctx.stroke();
+
+        const driverRadius = Math.max(1.5, (isLFE ? 3.6 : 2.8) * scaleMult);
+        const driverY = proj.y + (isLFE ? 2 : 1) * scaleMult;
+        ctx.beginPath();
+        ctx.arc(proj.x, driverY, driverRadius, 0, Math.PI * 2);
+        ctx.fillStyle = this.theme === 'dark' ? '#25364a' : '#cbd5e1';
+        ctx.fill();
+        ctx.strokeStyle = isSoloed ? '#00f0ff' : glowColor;
+        ctx.lineWidth = Math.max(0.7, 0.8 * scaleMult);
+        ctx.stroke();
+
+        if (isHeight) {
+          ctx.beginPath();
+          ctx.moveTo(proj.x, cabinetY - 4 * scaleMult);
+          ctx.lineTo(proj.x, cabinetY);
+          ctx.strokeStyle = this.colors.heightSpeaker;
+          ctx.lineWidth = Math.max(1, scaleMult);
+          ctx.stroke();
+        }
+      } else if (isObject) {
         // ✦ Hexagonal Dynamic Audio Object Beacon with orbital ring
         const sides = 6;
         ctx.beginPath();
@@ -1487,38 +1897,43 @@ export class Visualizer {
         ctx.fill();
       }
 
-      // ── Label ──────────────────────────────────────────────────────────────────
-      const labelY = proj.y - size - (this.povFollowSensor ? 10 * scaleMult : 12);
-      ctx.textAlign = 'center';
-      const fontSize = Math.max(8.5, Math.min(14, (isSoloed ? 11 : 9.5) * Math.sqrt(scaleMult)));
-      if (isSoloed) {
-        ctx.fillStyle = '#00f0ff';
-        ctx.font = `700 ${fontSize}px "Inter", sans-serif`;
-        ctx.fillText(`🎯 ${sp.shortName || sp.name}`, proj.x, labelY);
-      } else if (isLFE) {
-        ctx.fillStyle = this.colors.subText;
-        ctx.font = `600 ${fontSize}px "Inter", sans-serif`;
-        ctx.fillText('LFE', proj.x, labelY);
-      } else if (isObject) {
-        ctx.fillStyle = this.colors.objectText;
-        ctx.font = `700 ${fontSize}px "Inter", sans-serif`;
-        ctx.fillText(`✦ ${sp.shortName || sp.name}`, proj.x, labelY);
-      } else if (isBottom) {
-        ctx.fillStyle = this.colors.bottomText;
-        ctx.font = `700 ${fontSize}px "Inter", sans-serif`;
-        ctx.fillText(`▼ ${sp.shortName || sp.name}`, proj.x, labelY);
-      } else if (isVirtual) {
-        ctx.fillStyle = this.colors.virtualText;
-        ctx.font = `700 ${fontSize}px "Inter", sans-serif`;
-        ctx.fillText(`🎧 ${sp.shortName || sp.name}`, proj.x, labelY);
-      } else if (isHeight) {
-        ctx.fillStyle = this.colors.heightText;
-        ctx.font = `700 ${fontSize}px "Inter", sans-serif`;
-        ctx.fillText(sp.shortName || sp.name, proj.x, labelY);
-      } else {
-        ctx.fillStyle = this.colors.text;
-        ctx.font = `600 ${fontSize}px "Inter", sans-serif`;
-        ctx.fillText(sp.shortName || sp.name, proj.x, labelY);
+      // ── Channel label ─────────────────────────────────────────────────────────
+      const labelY = proj.y - (this.povFollowSensor ? 12 * scaleMult : size + 12);
+      const fontSize = Math.max(8.5, Math.min(13, (isSoloed ? 10 : 9) * Math.sqrt(scaleMult)));
+      const label = isSoloed ? (sp.shortName || sp.name) : isLFE ? 'LFE' : (sp.shortName || sp.name);
+      const labelColor = isSoloed ? '#00f0ff'
+        : isLFE ? this.colors.subText
+        : isObject ? this.colors.objectText
+        : isBottom ? this.colors.bottomText
+        : isVirtual ? this.colors.virtualText
+        : isHeight ? this.colors.heightText
+        : this.colors.text;
+      ctx.font = `700 ${fontSize}px "Inter", sans-serif`;
+      const textWidth = ctx.measureText(label).width;
+      const badgeWidth = textWidth + 19;
+      const badgeHeight = fontSize + 9;
+      const badgeX = proj.x - badgeWidth / 2;
+      const badgeY = labelY - fontSize - 5;
+      ctx.fillStyle = this.colors.hudBg;
+      ctx.strokeStyle = isSoloed || level > 0.08 ? labelColor : this.colors.hudBorder;
+      ctx.lineWidth = isSoloed ? 1.3 : 0.8;
+      ctx.beginPath();
+      if (ctx.roundRect) ctx.roundRect(badgeX, badgeY, badgeWidth, badgeHeight, 5);
+      else ctx.rect(badgeX, badgeY, badgeWidth, badgeHeight);
+      ctx.fill();
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.arc(badgeX + 7, badgeY + badgeHeight / 2, 2, 0, Math.PI * 2);
+      ctx.fillStyle = labelColor;
+      ctx.fill();
+      ctx.textAlign = 'left';
+      ctx.textBaseline = 'alphabetic';
+      ctx.fillStyle = labelColor;
+      ctx.fillText(label, badgeX + 12, labelY - 1);
+      if (level > 0.025) {
+        ctx.fillStyle = labelColor;
+        ctx.globalAlpha *= Math.min(1, 0.35 + level);
+        ctx.fillRect(badgeX + 4, badgeY + badgeHeight - 2, (badgeWidth - 8) * Math.min(1, level), 1.5);
       }
       ctx.restore();
     }
@@ -1794,9 +2209,9 @@ export class Visualizer {
   }
 
   /**
-   * First-person HUD rendered when in Real POV Mode (45° Human Eye FOV).
+   * First-person HUD rendered when immersive POV is active.
    * Features:
-   * 1. 45° Human Eye Center Crosshair & Reticle
+   * 1. Center reticle
    * 2. Active Speaker Direct Gaze Lock-on
    * 3. Sleek Top Compass Tape (0° FRONT, 90° RIGHT, 180° BACK, 270° LEFT)
    * 4. 360° Soundstage Mini-Radar in Bottom-Right Corner
@@ -1806,10 +2221,10 @@ export class Visualizer {
     const cx  = this.cx;
     const cy  = this.cy;
 
-    // ── 1. Center Eye Crosshair (45° FOV Gaze Reticle) ────────────────────────
+    // ── 1. Center reticle ────────────────────────────────────────────────────
     ctx.save();
-    const reticleColor = 'rgba(34, 211, 238, 0.75)';
-    const reticleDim   = 'rgba(34, 211, 238, 0.25)';
+    const reticleColor = 'rgba(133, 238, 255, 0.82)';
+    const reticleDim   = 'rgba(133, 238, 255, 0.3)';
 
     // Center focal point
     ctx.beginPath();
@@ -1904,15 +2319,16 @@ export class Visualizer {
       ctx.restore();
     }
 
-    // ── 3. Top Compass Tape Bar ───────────────────────────────────────────────
+    // ── 3. Bottom-Center Compass Tape Bar ─────────────────────────────────────
     ctx.save();
-    const tapeW = Math.min(380, this.width - 40);
+    const tapeW = Math.min(250, this.width - 36);
     const tapeH = 28;
-    const tapeX = cx - tapeW / 2;
-    const tapeY = 14;
+    const tapeX = (this.width - tapeW) / 2;
+    const tapeY = Math.max(12, this.height - tapeH - 16);
+    const tapeCenter = tapeX + tapeW / 2;
 
-    ctx.fillStyle = 'rgba(10, 15, 30, 0.72)';
-    ctx.strokeStyle = 'rgba(255, 255, 255, 0.12)';
+    ctx.fillStyle = this.colors.hudBg;
+    ctx.strokeStyle = this.colors.hudBorder;
     ctx.lineWidth = 1;
     ctx.beginPath();
     if (ctx.roundRect) ctx.roundRect(tapeX, tapeY, tapeW, tapeH, 6);
@@ -1923,9 +2339,9 @@ export class Visualizer {
     // Center indicator marker (triangle)
     ctx.fillStyle = '#22d3ee';
     ctx.beginPath();
-    ctx.moveTo(cx, tapeY + tapeH);
-    ctx.lineTo(cx - 5, tapeY + tapeH + 5);
-    ctx.lineTo(cx + 5, tapeY + tapeH + 5);
+    ctx.moveTo(tapeCenter, tapeY + tapeH);
+    ctx.lineTo(tapeCenter - 5, tapeY + tapeH + 5);
+    ctx.lineTo(tapeCenter + 5, tapeY + tapeH + 5);
     ctx.closePath();
     ctx.fill();
 
@@ -1936,12 +2352,12 @@ export class Visualizer {
     else ctx.rect(tapeX + 2, tapeY + 2, tapeW - 4, tapeH - 4);
     ctx.clip();
 
-    const pixelsPerDeg = tapeW / 120; // 120° FOV window displayed in tape
+    const pixelsPerDeg = tapeW / 100;
     const currentYaw = ((this.yaw % 360) + 360) % 360;
 
     for (let deg = -180; deg <= 540; deg += 15) {
       const diff = deg - currentYaw;
-      const x = cx + diff * pixelsPerDeg;
+      const x = tapeCenter + diff * pixelsPerDeg;
       if (x < tapeX - 20 || x > tapeX + tapeW + 20) continue;
 
       const normDeg = ((deg % 360) + 360) % 360;
@@ -1954,18 +2370,18 @@ export class Visualizer {
       ctx.beginPath();
       ctx.moveTo(x, tapeY + 2);
       ctx.lineTo(x, tapeY + (label ? 10 : 6));
-      ctx.strokeStyle = label ? '#22d3ee' : 'rgba(255, 255, 255, 0.35)';
+      ctx.strokeStyle = label ? '#7deaff' : 'rgba(255, 255, 255, 0.35)';
       ctx.lineWidth = label ? 1.5 : 1;
       ctx.stroke();
 
       if (label) {
         ctx.font = '700 9px "Roboto Mono", monospace';
-        ctx.fillStyle = '#22d3ee';
+        ctx.fillStyle = '#7deaff';
         ctx.textAlign = 'center';
         ctx.fillText(label, x, tapeY + 20);
       } else if (normDeg % 30 === 0) {
         ctx.font = '500 8px "Roboto Mono", monospace';
-        ctx.fillStyle = 'rgba(255, 255, 255, 0.45)';
+        ctx.fillStyle = this.colors.compassText;
         ctx.textAlign = 'center';
         ctx.fillText(`${normDeg}°`, x, tapeY + 19);
       }
@@ -1980,8 +2396,8 @@ export class Visualizer {
     const radarY = this.height - radarR - 16;
 
     // Radar background disc
-    ctx.fillStyle = 'rgba(10, 15, 30, 0.85)';
-    ctx.strokeStyle = 'rgba(34, 211, 238, 0.3)';
+    ctx.fillStyle = this.colors.hudBg;
+    ctx.strokeStyle = this.colors.roomEdge;
     ctx.lineWidth = 1.2;
     ctx.beginPath();
     ctx.arc(radarX, radarY, radarR, 0, Math.PI * 2);
@@ -1991,7 +2407,7 @@ export class Visualizer {
     // Inner distance ring
     ctx.beginPath();
     ctx.arc(radarX, radarY, radarR * 0.5, 0, Math.PI * 2);
-    ctx.strokeStyle = 'rgba(34, 211, 238, 0.15)';
+    ctx.strokeStyle = this.colors.roomGrid;
     ctx.lineWidth = 0.8;
     ctx.stroke();
 
@@ -2002,7 +2418,7 @@ export class Visualizer {
     // Yaw=0 points straight UP (-PI/2 in canvas 2D screen space)
     const baseAngle = -Math.PI / 2 + yawRad;
 
-    ctx.fillStyle = 'rgba(34, 211, 238, 0.18)';
+    ctx.fillStyle = 'rgba(34, 211, 238, 0.12)';
     ctx.beginPath();
     ctx.moveTo(radarX, radarY);
     ctx.arc(radarX, radarY, radarR * 0.95, baseAngle - fovHalfRad, baseAngle + fovHalfRad);
@@ -2010,7 +2426,7 @@ export class Visualizer {
     ctx.fill();
 
     // Viewing cone boundary rays
-    ctx.strokeStyle = 'rgba(34, 211, 238, 0.6)';
+    ctx.strokeStyle = 'rgba(34, 211, 238, 0.5)';
     ctx.lineWidth = 1;
     ctx.beginPath();
     ctx.moveTo(radarX, radarY);
@@ -2046,7 +2462,7 @@ export class Visualizer {
 
     // Mini-Radar Title
     ctx.font = '600 8.5px "Roboto Mono", monospace';
-    ctx.fillStyle = 'rgba(255, 255, 255, 0.65)';
+    ctx.fillStyle = this.colors.hudText;
     ctx.textAlign = 'center';
     ctx.fillText('360° RADAR', radarX, radarY + radarR + 11);
     ctx.restore();
@@ -2097,66 +2513,62 @@ export class Visualizer {
 
   _drawHUD() {
     const ctx = this.ctx;
-    ctx.font      = '11px "Roboto Mono", monospace';
-    ctx.textBaseline = 'alphabetic';
+    const cardX = 14;
+    const cardY = this.height - 150;
+    const cardW = 154;
+    const cardH = 136;
+    ctx.save();
+    ctx.globalAlpha = this.povFollowSensor ? 0.88 : 1;
+    ctx.fillStyle = this.colors.hudBg;
+    ctx.strokeStyle = this.colors.hudBorder;
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    if (ctx.roundRect) ctx.roundRect(cardX, cardY, cardW, cardH, 10);
+    else ctx.rect(cardX, cardY, cardW, cardH);
+    ctx.fill();
+    ctx.stroke();
 
-    // Orientation readout (bottom-left)
-    ctx.fillStyle  = this.colors.compassText;
-    ctx.textAlign  = 'left';
-    const curDist = Math.hypot(this.listenerMX, this.listenerMZ);
-    const outsideTag = (this.allowOutsideBoundary && curDist > this.roomRadius * 1.01) ? `  [OUTSIDE ${curDist.toFixed(1)}m]` : '';
-    const modeTag = this.povFollowSensor ? '  [👁️ REAL POV 45°]' : '  [📐 ORBIT VIEW]';
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'middle';
+    ctx.font = '600 8px "Roboto Mono", monospace';
+    ctx.fillStyle = this.colors.compassText;
+    ctx.fillText(this.povFollowSensor ? 'LIVE POV' : 'LISTENER', cardX + 11, cardY + 15);
+
+    ctx.font = '600 8px "Roboto Mono", monospace';
+    ctx.fillStyle = this.colors.hudText;
     const rows = [
-      `YAW   ${this._fmtDeg(this.yaw)}°`,
-      `PITCH ${this._fmtDeg(this.pitch)}°`,
-      `ROLL  ${this._fmtDeg(this.roll)}°`,
-      `POS   X:${this._fmtM(this.listenerMX)}  Y:${this._fmtM(this.listenerMY || 0)}  Z:${this._fmtM(this.listenerMZ)}${outsideTag}${modeTag}`
+      ['YAW', `${this._fmtDeg(this.yaw)}°`],
+      ['PITCH', `${this._fmtDeg(this.pitch)}°`],
+      ['ROLL', `${this._fmtDeg(this.roll)}°`],
+      ['X', this._fmtM(this.listenerMX)],
+      ['Y', this._fmtM(this.listenerMY || 0)],
+      ['Z', this._fmtM(this.listenerMZ)]
     ];
-    for (let i = 0; i < rows.length; i++) {
-      ctx.fillText(rows[i], 12, this.height - 14 - (rows.length - 1 - i) * 16);
-    }
-
-    // Camera hint (bottom-right / bottom-center)
-    if (!this.povFollowSensor) {
+    rows.forEach(([label, value], index) => {
+      const rowY = cardY + 38 + index * 15;
+      ctx.fillStyle = this.colors.compassText;
+      ctx.fillText(label, cardX + 11, rowY);
+      ctx.fillStyle = this.colors.hudText;
       ctx.textAlign = 'right';
-      ctx.fillText('🔴 X  🟢 Y  🔵 Z  ·  WASD walk  ·  Scroll/+- zoom  ·  B boundary  ·  P Real POV', this.width - 12, this.height - 14);
-    } else {
+      ctx.fillText(value, cardX + cardW - 11, rowY);
       ctx.textAlign = 'left';
-      ctx.fillStyle = 'rgba(34, 211, 238, 0.85)';
-      ctx.fillText('👁️ Real POV (45° Human Eye)  ·  Drag canvas to look  ·  WASD walk  ·  ↑↓ height  ·  P Orbit view', 12, this.height - 14 - rows.length * 16);
-    }
-
-    // Height label watermark (top-right, small)
-    if (this.speakers.some(s => s.isHeight) && !this.povFollowSensor) {
-      ctx.textAlign  = 'right';
-      ctx.fillStyle  = this.colors.ceilRim;
-      ctx.font       = '500 9px "Inter", sans-serif';
-      ctx.fillText('◆ = Height speaker   ● = Floor speaker', this.width - 12, 18);
-    }
-
-    // Active spatial effect indicator (top-left)
-    if (this.activeEffectName) {
-      ctx.textAlign = 'left';
-      ctx.fillStyle = this.colors.speakerActive || '#6366f1';
-      ctx.font = '600 11px "Inter", sans-serif';
-      ctx.fillText(`✨ EFFECT: ${this.activeEffectName.toUpperCase()}`, 12, 22);
-    }
-
-    // Real POV Top Badge
-    if (this.povFollowSensor) {
-      ctx.textAlign = 'left';
-      ctx.fillStyle = '#22d3ee';
-      ctx.font = '700 10.5px "Roboto Mono", monospace';
-      if (this.activeGazeSpeaker) {
-        const lvl = Math.round((this.channelLevels[this.activeGazeSpeaker.index] || 0) * 100);
-        ctx.fillText(`🎯 TARGET: ${this.activeGazeSpeaker.name.toUpperCase()} (${this.activeGazeSpeaker.shortName}) · LEVEL ${lvl}%`, 12, this.activeEffectName ? 38 : 22);
-      } else {
-        ctx.fillText('👁️ REAL POV: 45° HUMAN EYE VIEW (FRONT EYE LOCKED)', 12, this.activeEffectName ? 38 : 22);
+      if (index === 2) {
+        ctx.strokeStyle = this.colors.hudBorder;
+        ctx.beginPath();
+        ctx.moveTo(cardX + 10, rowY + 9);
+        ctx.lineTo(cardX + cardW - 10, rowY + 9);
+        ctx.stroke();
       }
+    });
+    if (this.povFollowSensor) {
+      ctx.fillStyle = '#7deaff';
+      ctx.beginPath();
+      ctx.arc(cardX + cardW - 12, cardY + 15, 2.5, 0, Math.PI * 2);
+      ctx.fill();
     }
+    ctx.restore();
   }
 
   _fmtDeg(v) { return `${v >= 0 ? '+' : ''}${v.toFixed(1)}`; }
   _fmtM(v)   { return `${v >= 0 ? '+' : ''}${v.toFixed(2)}m`; }
 }
-

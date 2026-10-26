@@ -32,6 +32,7 @@ class App {
     this.tourCurrentSpeaker = 0;
     this.tourProgress = 0;
     this.tourHoverTimer = 0;
+    this.scenePovReturnState = null;
 
     // Solo & Axis Calibration
     this.autoCycleInterval = null;
@@ -54,6 +55,7 @@ class App {
     // ─── Theme ───────────────────────────────────────────────────────────
     this.theme = localStorage.getItem('spatial_theme') || 'light';
     this.setTheme(this.theme);
+    this._initControlDeck();
 
     // ─── Target Channel Layout ────────────────────────────────────────────
     this.targetLayout = localStorage.getItem('spatial_target_layout') || 'auto';
@@ -63,6 +65,11 @@ class App {
     const canvas = document.getElementById('visualizer-canvas');
     this.visualizer = new Visualizer(canvas);
     this.visualizer.setTheme(this.theme);
+    const sceneSelect = document.getElementById('scene-select');
+    const savedScene = localStorage.getItem('spatial_scene');
+    const activeScene = this.visualizer.scenes[savedScene] ? savedScene : 'living-room';
+    this.visualizer.setScene(activeScene);
+    if (sceneSelect) sceneSelect.value = activeScene;
     this.visualizer.start();
 
     // Default preview layout on startup so 3D speaker stage is visible immediately
@@ -71,6 +78,26 @@ class App {
       this.engine.setLayout(defaultLayout);
     }
     this.visualizer.setSpeakers(this.engine.layout);
+    this.visualizer.setPovFollowSensor(true);
+    document.querySelector('.visualizer-panel')?.classList.add('immersive-pov');
+    const povButton = document.getElementById('btn-pov-lock');
+    if (povButton) {
+      povButton.classList.add('active');
+      povButton.setAttribute('aria-pressed', 'true');
+      povButton.setAttribute('aria-label', 'Switch to orbit overview');
+      povButton.title = 'Immersive first-person view active. Click to switch to orbit overview (P).';
+    }
+    const povToggle = document.getElementById('pov-lock-toggle');
+    if (povToggle) povToggle.checked = true;
+    const povBadge = document.getElementById('pov-lock-badge');
+    if (povBadge) {
+      povBadge.textContent = 'Immersive POV';
+      povBadge.style.color = 'var(--accent-cyan)';
+      povBadge.style.background = 'rgba(34, 211, 238, 0.12)';
+      povBadge.style.borderColor = 'rgba(34, 211, 238, 0.25)';
+    }
+    this._syncPovModeControls(false);
+    this._updateSceneHeading();
     this._renderAdvancedChannels(this.engine.getChannelConfigs());
 
     // ─── Draggable Listener Position & Orientation ─────────────────────────
@@ -195,11 +222,123 @@ class App {
 
     // ─── UI Event Binding ─────────────────────────────────────────────────
     this._bindEvents();
+    this._initGpuPreferenceSettings();
 
     // ─── Decoder Engine Status Check ──────────────────────────────────────
     this._checkDecoderStatus();
 
     console.log('[App] SpatialAudio initialized');
+  }
+
+  async _initGpuPreferenceSettings() {
+    const select = document.getElementById('gpu-preference-select');
+    const status = document.getElementById('gpu-preference-status');
+    const restartButton = document.getElementById('btn-restart-for-gpu');
+    const api = window.desktopAPI;
+    if (!select || !status || !restartButton) return;
+
+    if (!api?.getGpuPreference || !api?.setGpuPreference || !api?.restartApp) {
+      select.disabled = true;
+      return;
+    }
+
+    let savedPreference = select.value;
+    let activePreference = select.value;
+    try {
+      const state = await api.getGpuPreference();
+      select.value = state.preference;
+      select.disabled = !state.supported;
+      activePreference = state.activePreference;
+      status.textContent = state.supported
+        ? (state.preference !== activePreference
+          ? 'A saved GPU preference is waiting for a restart. Windows or the graphics driver may override the request.'
+          : 'Select a GPU preference. Restart SpatialAudio to apply it; Windows or the graphics driver may override the request.')
+        : 'GPU preference is available only in the Windows desktop app.';
+      restartButton.classList.toggle('hidden', !state.supported || state.preference === activePreference);
+    } catch (error) {
+      select.disabled = true;
+      status.textContent = 'Could not load the GPU preference.';
+      console.error('[App] Could not load GPU preference:', error);
+      return;
+    }
+    if (select.disabled) return;
+
+    savedPreference = select.value;
+    select.addEventListener('change', async () => {
+      select.disabled = true;
+      status.textContent = 'Saving GPU preference...';
+      try {
+        const result = await api.setGpuPreference(select.value);
+        savedPreference = result.preference;
+        activePreference = result.activePreference;
+        const restartRequired = savedPreference !== activePreference;
+        status.textContent = restartRequired
+          ? 'Saved. Restart SpatialAudio to apply; Windows or the graphics driver may override the request.'
+          : 'Saved. This GPU preference is already active.';
+        restartButton.classList.toggle('hidden', !restartRequired);
+      } catch (error) {
+        select.value = savedPreference;
+        status.textContent = 'Could not save the GPU preference.';
+        console.error('[App] Could not save GPU preference:', error);
+      } finally {
+        select.disabled = false;
+      }
+    });
+
+    restartButton.addEventListener('click', () => api.restartApp());
+  }
+
+  _initControlDeck() {
+    const sidebar = document.querySelector('.control-sidebar');
+    const tabs = Array.from(document.querySelectorAll('.control-tab[data-panel]'));
+    const title = document.getElementById('control-panel-title');
+    const index = document.getElementById('control-panel-index');
+    const panelNames = {
+      playback: 'Playback',
+      sound: 'Soundstage',
+      tracking: 'Head tracking',
+      tools: 'Tools & decoders'
+    };
+
+    if (!sidebar || tabs.length === 0) return;
+
+    const selectPanel = (panel) => {
+      sidebar.dataset.activePanel = panel;
+      if (title) title.textContent = panelNames[panel] || 'Controls';
+      const panelIndex = tabs.findIndex((tab) => tab.dataset.panel === panel);
+      if (index) index.textContent = `${String(panelIndex + 1).padStart(2, '0')} / ${String(tabs.length).padStart(2, '0')}`;
+
+      tabs.forEach((tab) => {
+        const isActive = tab.dataset.panel === panel;
+        tab.classList.toggle('active', isActive);
+        tab.setAttribute('aria-selected', String(isActive));
+        tab.tabIndex = isActive ? 0 : -1;
+      });
+
+      sidebar.querySelectorAll('[data-control-panel]').forEach((card) => {
+        card.hidden = card.dataset.controlPanel !== panel;
+        card.setAttribute('role', 'tabpanel');
+        card.setAttribute('aria-labelledby', `tab-${card.dataset.controlPanel}`);
+      });
+    };
+
+    tabs.forEach((tab, tabIndex) => {
+      tab.addEventListener('click', () => selectPanel(tab.dataset.panel));
+      tab.addEventListener('keydown', (event) => {
+        let nextIndex = tabIndex;
+        if (event.key === 'ArrowRight') nextIndex = (tabIndex + 1) % tabs.length;
+        else if (event.key === 'ArrowLeft') nextIndex = (tabIndex - 1 + tabs.length) % tabs.length;
+        else if (event.key === 'Home') nextIndex = 0;
+        else if (event.key === 'End') nextIndex = tabs.length - 1;
+        else return;
+
+        event.preventDefault();
+        tabs[nextIndex].focus();
+        selectPanel(tabs[nextIndex].dataset.panel);
+      });
+    });
+
+    selectPanel(sidebar.dataset.activePanel || 'playback');
   }
 
   async _checkDecoderStatus() {
@@ -229,7 +368,7 @@ class App {
     if (container) container.classList.toggle('hidden', !isMasterOn);
     if (masterBadge) {
       masterBadge.textContent = isMasterOn ? '🟢 On' : 'Off';
-      masterBadge.style.background = isMasterOn ? 'rgba(16, 185, 129, 0.15)' : 'rgba(255,255,255,0.06)';
+      masterBadge.style.background = isMasterOn ? 'rgba(16, 185, 129, 0.15)' : 'var(--bg-card-hover)';
       masterBadge.style.color = isMasterOn ? 'var(--accent-success, #10b981)' : 'var(--text-muted)';
     }
     this._updateDecoderEngineBadges();
@@ -243,7 +382,7 @@ class App {
     if (ffcodecBadge) {
       if (!this.engine.useFFCodec) {
         ffcodecBadge.textContent = '⚪ Disabled';
-        ffcodecBadge.style.background = 'rgba(255,255,255,0.06)';
+        ffcodecBadge.style.background = 'var(--bg-card-hover)';
         ffcodecBadge.style.color = 'var(--text-muted)';
       } else if (data.ffcodecAvailable || data.ac4Available) {
         ffcodecBadge.textContent = '🟢 Active';
@@ -258,12 +397,20 @@ class App {
   }
 
   setTheme(theme) {
-    this.theme = theme;
-    document.documentElement.dataset.theme = theme;
-    if (this.visualizer) {
-      this.visualizer.setTheme(theme);
+    const normalizedTheme = theme === 'dark' ? 'dark' : 'light';
+    this.theme = normalizedTheme;
+    document.documentElement.dataset.theme = normalizedTheme;
+    const themeToggle = document.getElementById('theme-toggle');
+    if (themeToggle) {
+      const nextTheme = normalizedTheme === 'dark' ? 'light' : 'dark';
+      themeToggle.setAttribute('aria-label', `Switch to ${nextTheme} mode`);
+      themeToggle.title = `Switch to ${nextTheme} mode`;
+      themeToggle.setAttribute('aria-pressed', String(normalizedTheme === 'dark'));
     }
-    localStorage.setItem('spatial_theme', theme);
+    if (this.visualizer) {
+      this.visualizer.setTheme(normalizedTheme);
+    }
+    localStorage.setItem('spatial_theme', normalizedTheme);
   }
 
   // ─── File Loading ───────────────────────────────────────────────────────────
@@ -286,6 +433,7 @@ class App {
       
       // Update visualizer with speaker layout
       this.visualizer.setSpeakers(this.fileInfo.layout);
+      this._syncSceneSpeakerPositions();
       
       this._updateFileInfo(file, this.fileInfo);
       this._renderAdvancedChannels(this.fileInfo.channelConfigs || this.engine.getChannelConfigs());
@@ -572,7 +720,7 @@ class App {
     if (badge) {
       badge.textContent = this.virtualHeadLook ? 'ON' : 'OFF';
       badge.style.color = this.virtualHeadLook ? 'var(--accent-primary)' : 'var(--text-muted)';
-      badge.style.background = this.virtualHeadLook ? 'rgba(56, 189, 248, 0.15)' : 'rgba(255, 255, 255, 0.06)';
+      badge.style.background = this.virtualHeadLook ? 'rgba(56, 189, 248, 0.15)' : 'var(--bg-card-hover)';
       badge.style.borderColor = this.virtualHeadLook ? 'rgba(56, 189, 248, 0.3)' : 'var(--border-subtle)';
     }
 
@@ -617,7 +765,7 @@ class App {
     if (badge) {
       badge.textContent = this.ambientSway ? 'ON' : 'OFF';
       badge.style.color = this.ambientSway ? 'var(--accent-primary)' : 'var(--text-muted)';
-      badge.style.background = this.ambientSway ? 'rgba(56, 189, 248, 0.15)' : 'rgba(255, 255, 255, 0.06)';
+      badge.style.background = this.ambientSway ? 'rgba(56, 189, 248, 0.15)' : 'var(--bg-card-hover)';
       badge.style.borderColor = this.ambientSway ? 'rgba(56, 189, 248, 0.3)' : 'var(--border-subtle)';
     }
     const sliderContainer = document.getElementById('micro-sway-slider-container');
@@ -1072,8 +1220,7 @@ class App {
     let statusMsg = `Auto-POV: ${friendlyName} (${this.effectPace.toFixed(1)}x)`;
 
     if ((effectName === 'height' || effectName === 'midorbit' || effectName === 'heightorbit') && !hasHeight) {
-      vizBadge = effectName === 'heightorbit' ? 'Floor Orbit' : (effectName === 'midorbit' ? 'Floor Orbit' : 'Surround Orbit');
-      statusMsg = `Auto-POV: ${friendlyName} (No height channels in current layout · Flat 2D)`;
+      statusMsg = `Auto-POV: ${friendlyName} (vertical listener motion over the active bed layout)`;
     } else if (hasHeight && (effectName === 'heightorbit' || effectName === 'midorbit' || effectName === 'height' || effectName === 'infinity' || effectName === 'tour' || effectName === 'wave' || effectName === 'vortex')) {
       const extra = effectName === 'heightorbit' ? 'Ceiling Atmos Plane' : (effectName === 'midorbit' ? 'Midway Base & Ceiling' : '3D Spatial Active');
       statusMsg = `Auto-POV: ${friendlyName} (${extra} · ${this.effectPace.toFixed(1)}x)`;
@@ -1486,6 +1633,38 @@ class App {
   // ─── Event Binding ─────────────────────────────────────────────────────────
 
   _bindEvents() {
+    document.getElementById('scene-select')?.addEventListener('change', (event) => {
+      const scene = this.visualizer.setScene(event.currentTarget.value);
+      localStorage.setItem('spatial_scene', this.visualizer.scene);
+      this._syncSceneSpeakerPositions();
+      this._updateSceneHeading(scene);
+    });
+
+    const povModeToggle = document.getElementById('pov-mode-toggle');
+    const povModeContent = document.getElementById('pov-mode-content');
+    const povModeIcon = document.getElementById('pov-mode-toggle-icon');
+    const togglePovModeContent = () => {
+      const expanded = povModeToggle.getAttribute('aria-expanded') !== 'true';
+      povModeToggle.setAttribute('aria-expanded', String(expanded));
+      povModeToggle.classList.toggle('collapsed', !expanded);
+      povModeContent?.classList.toggle('hidden', !expanded);
+      if (povModeIcon) povModeIcon.style.transform = expanded ? 'rotate(0deg)' : 'rotate(-90deg)';
+    };
+    povModeToggle?.addEventListener('click', togglePovModeContent);
+    povModeToggle?.addEventListener('keydown', (event) => {
+      if (event.key === 'Enter' || event.key === ' ') {
+        event.preventDefault();
+        event.stopPropagation();
+        togglePovModeContent();
+      }
+    });
+    document.getElementById('btn-scene-pov-toggle')?.addEventListener('click', () => {
+      this._setScenePovMode(!this.visualizer.walkableSceneMode);
+    });
+    document.getElementById('btn-scene-pov-exit')?.addEventListener('click', () => {
+      this._setScenePovMode(false);
+    });
+
     // File input (supports multiple files for queue)
     const fileInput = document.getElementById('file-input');
     fileInput.addEventListener('change', (e) => {
@@ -1493,6 +1672,7 @@ class App {
         this.addFilesToQueue(e.target.files);
         fileInput.value = '';
       }
+
     });
 
     // Drop zone
@@ -1566,11 +1746,20 @@ class App {
     const effToggle = document.getElementById('effects-toggle');
     const effIcon = document.getElementById('effects-toggle-icon');
     const effContent = document.getElementById('effects-content');
-    effToggle?.addEventListener('click', () => {
+    const toggleEffects = () => {
       effToggle.classList.toggle('collapsed');
-      if (effContent) effContent.classList.toggle('hidden');
+      const expanded = !effToggle.classList.contains('collapsed');
+      effToggle.setAttribute('aria-expanded', String(expanded));
+      if (effContent) effContent.classList.toggle('hidden', !expanded);
       if (effIcon) {
-        effIcon.style.transform = effToggle.classList.contains('collapsed') ? 'rotate(-90deg)' : 'rotate(0deg)';
+        effIcon.style.transform = expanded ? 'rotate(0deg)' : 'rotate(-90deg)';
+      }
+    };
+    effToggle?.addEventListener('click', toggleEffects);
+    effToggle?.addEventListener('keydown', (event) => {
+      if (event.key === 'Enter' || event.key === ' ') {
+        event.preventDefault();
+        toggleEffects();
       }
     });
 
@@ -1733,6 +1922,7 @@ class App {
         if (topHeightVal) topHeightVal.textContent = `${pct}%`;
         this.engine.setTopSpeakerHeightScale(scale);
         this.visualizer.setTopSpeakerHeightScale(scale);
+        this._syncSceneSpeakerPositions();
       });
     }
 
@@ -1755,10 +1945,19 @@ class App {
     // Advanced Channels Accordion Toggle
     const advToggle = document.getElementById('advanced-toggle');
     const advIcon = document.getElementById('advanced-toggle-icon');
-    advToggle?.addEventListener('click', () => {
+    const toggleAdvanced = () => {
       advToggle.classList.toggle('collapsed');
+      const expanded = !advToggle.classList.contains('collapsed');
+      advToggle.setAttribute('aria-expanded', String(expanded));
       if (advIcon) {
-        advIcon.style.transform = advToggle.classList.contains('collapsed') ? 'rotate(-90deg)' : 'rotate(0deg)';
+        advIcon.style.transform = expanded ? 'rotate(0deg)' : 'rotate(-90deg)';
+      }
+    };
+    advToggle?.addEventListener('click', toggleAdvanced);
+    advToggle?.addEventListener('keydown', (event) => {
+      if (event.key === 'Enter' || event.key === ' ') {
+        event.preventDefault();
+        toggleAdvanced();
       }
     });
 
@@ -1945,9 +2144,9 @@ class App {
       if (mpeghContent) mpeghContent.classList.toggle('hidden', !enabled);
       if (mpeghBadge) {
         mpeghBadge.textContent = enabled ? '🟢 On' : 'Off';
-        mpeghBadge.style.background = enabled ? 'rgba(16, 185, 129, 0.15)' : 'rgba(255,255,255,0.06)';
+        mpeghBadge.style.background = enabled ? 'rgba(16, 185, 129, 0.15)' : 'var(--bg-card-hover)';
         mpeghBadge.style.color = enabled ? 'var(--accent-success, #10b981)' : 'var(--text-muted)';
-        mpeghBadge.style.borderColor = enabled ? 'rgba(16, 185, 129, 0.3)' : 'rgba(255,255,255,0.1)';
+        mpeghBadge.style.borderColor = enabled ? 'rgba(16, 185, 129, 0.3)' : 'var(--border-subtle)';
       }
     };
 
@@ -2031,6 +2230,7 @@ class App {
           // Connect stream into AudioEngine
           await this.engine.connectLiveMediaStream(stream, 'stereo');
           this.visualizer.setSpeakers(this.engine.layout);
+          this._syncSceneSpeakerPositions();
           this._renderAdvancedChannels(this.engine.getChannelConfigs());
           
           if (streamingBar) streamingBar.style.display = 'flex';
@@ -2188,9 +2388,9 @@ class App {
       if (jocContent) jocContent.classList.toggle('hidden', !enabled);
       if (jocBadge) {
         jocBadge.textContent = enabled ? '🟢 Ready' : 'Off';
-        jocBadge.style.background = enabled ? 'rgba(16, 185, 129, 0.15)' : 'rgba(255,255,255,0.06)';
+        jocBadge.style.background = enabled ? 'rgba(16, 185, 129, 0.15)' : 'var(--bg-card-hover)';
         jocBadge.style.color = enabled ? 'var(--accent-success, #10b981)' : 'var(--text-muted)';
-        jocBadge.style.borderColor = enabled ? 'rgba(16, 185, 129, 0.3)' : 'rgba(255,255,255,0.1)';
+        jocBadge.style.borderColor = enabled ? 'rgba(16, 185, 129, 0.3)' : 'var(--border-subtle)';
       }
     };
 
@@ -2603,6 +2803,10 @@ class App {
       if (label) label.textContent = allowOutside ? 'Boundary: Free' : 'Boundary: Clamped';
       if (btn) {
         btn.classList.toggle('active', allowOutside);
+        btn.setAttribute('aria-pressed', String(allowOutside));
+        btn.setAttribute('aria-label', allowOutside
+          ? 'Clamp movement to the speaker boundary'
+          : 'Allow movement outside the speaker boundary');
         btn.title = allowOutside
           ? 'Circle Boundary: Free (Click to clamp inside circle)'
           : 'Circle Boundary: Clamped (Click to allow moving outside)';
@@ -2619,8 +2823,9 @@ class App {
       updateBoundaryUI(!this.visualizer.allowOutsideBoundary);
     });
 
-    // ── Lock POV to Front (Real POV - 45° Human Eye FOV) ───────────────────
+    // ── Immersive first-person stage view ──────────────────────────────────
     const updatePovLockUI = (active) => {
+      if (this.visualizer.walkableSceneMode) return;
       this.visualizer.setPovFollowSensor(active);
       const povToggle = document.getElementById('pov-lock-toggle');
       if (povToggle && povToggle.checked !== active) {
@@ -2628,23 +2833,27 @@ class App {
       }
       const badge = document.getElementById('pov-lock-badge');
       if (badge) {
-        badge.textContent = active ? 'Real POV (45°)' : 'Orbit View';
+        badge.textContent = active ? 'Immersive POV' : 'Orbit View';
         badge.style.color = active ? 'var(--accent-cyan)' : 'var(--text-muted)';
-        badge.style.background = active ? 'rgba(34, 211, 238, 0.12)' : 'rgba(255, 255, 255, 0.06)';
+        badge.style.background = active ? 'rgba(34, 211, 238, 0.12)' : 'var(--bg-card-hover)';
         badge.style.borderColor = active ? 'rgba(34, 211, 238, 0.25)' : 'var(--border-subtle)';
       }
       const icon = document.getElementById('pov-btn-icon');
       const label = document.getElementById('pov-btn-label');
       const btn = document.getElementById('btn-pov-lock');
       if (icon) icon.textContent = '👁️';
-      if (label) label.textContent = active ? 'Real POV: ON' : 'Real POV: Off';
+      if (label) label.textContent = active ? 'Immersive POV: On' : 'Immersive POV: Off';
       if (btn) {
         btn.classList.toggle('active', active);
+        btn.setAttribute('aria-pressed', String(active));
+        btn.setAttribute('aria-label', active ? 'Switch to orbit overview' : 'Switch to immersive first-person view');
         btn.title = active
-          ? 'Real POV Active (45° Human Eye Perspective - Screen is user front eye). Click to switch to Orbit View (Key: P).'
-          : 'Orbit View Active. Click to lock POV to front with 45° Real Human Eye perspective (Key: P).';
+          ? 'Immersive first-person view active. Click to switch to orbit overview (P).'
+          : 'Orbit overview active. Click to enter immersive first-person view (P).';
       }
-      this._showStatus(active ? 'Real POV: 45° Human Eye Perspective (Display = Front Eyes)' : 'Orbit View: 3D Perspective Mode');
+      document.querySelector('.visualizer-panel')?.classList.toggle('immersive-pov', active);
+      this._updateSceneHeading();
+      this._showStatus(active ? 'Immersive POV: First-person stage view' : 'Orbit overview: Speaker layout');
       setTimeout(() => this._showStatus('Ready'), 1500);
     };
 
@@ -2719,10 +2928,14 @@ class App {
           handleResetView();
           break;
         case 'b':
-          updateBoundaryUI(!this.visualizer.allowOutsideBoundary);
+          if (!this.visualizer.walkableSceneMode) {
+            updateBoundaryUI(!this.visualizer.allowOutsideBoundary);
+          }
           break;
         case 'p':
-          updatePovLockUI(!this.visualizer.povFollowSensor);
+          if (!this.visualizer.walkableSceneMode) {
+            updatePovLockUI(!this.visualizer.povFollowSensor);
+          }
           break;
         case '+':
         case '=':
@@ -2842,53 +3055,28 @@ class App {
           x = R * Math.sin(this.effectPhase);
           z = R * Math.cos(this.effectPhase);
 
-          if (hasHeight) {
-            // Compute exact midpoint between floor base (0m) and ceiling speakers (~1.55m -> ~0.78m)
-            const topScale = this.visualizer.topSpeakerHeightScale || 1.0;
-            const topElRad = (45 * topScale * Math.PI) / 180;
-            const topHeight = 2.2 * Math.sin(topElRad);
-            y = topHeight / 2; // Mid-elevation between base and height
-          } else {
-            y = 0; // If no height speakers, remain on base plane
-          }
+          const topScale = this.visualizer.topSpeakerHeightScale || 1.0;
+          const topElRad = (45 * topScale * Math.PI) / 180;
+          const topHeight = 2.2 * Math.sin(topElRad);
+          y = topHeight / 2;
         } else if (this.activeEffect === 'heightorbit') {
           // Continuous circular orbit specifically on the ceiling Atmos height speaker plane
           this.effectPhase += 0.012 * pace * dir;
 
-          if (hasHeight) {
-            const topScale = this.visualizer.topSpeakerHeightScale || 1.0;
-            const topElRad = (45 * topScale * Math.PI) / 180;
-            const topHeight = 2.2 * Math.sin(topElRad);
-            const topRadius = 2.2 * Math.cos(topElRad);
-            const R = Math.min(1.50, Math.max(1.15, topRadius));
-            x = R * Math.sin(this.effectPhase);
-            z = R * Math.cos(this.effectPhase);
-            y = topHeight; // Strictly at ceiling Atmos speaker height
-          } else {
-            const R = 1.48;
-            x = R * Math.sin(this.effectPhase);
-            z = R * Math.cos(this.effectPhase);
-            y = 0; // Bed level fallback if no height channels
-          }
+          const topScale = this.visualizer.topSpeakerHeightScale || 1.0;
+          const topElRad = (45 * topScale * Math.PI) / 180;
+          const topHeight = 2.2 * Math.sin(topElRad);
+          const topRadius = 2.2 * Math.cos(topElRad);
+          const R = Math.min(1.50, Math.max(1.15, topRadius));
+          x = R * Math.sin(this.effectPhase);
+          z = R * Math.cos(this.effectPhase);
+          y = topHeight;
         } else if (this.activeEffect === 'height') {
-          if (hasHeight) {
-            // Height channels EXIST: Showcase ceiling Atmos channels!
-            // 3D ascending/descending corkscrew spiral into top speakers
-            const R = 1.25;
-            this.effectPhase += 0.010 * pace * dir;
-            x = R * Math.sin(this.effectPhase);
-            z = R * Math.cos(this.effectPhase);
-            // Oscillate smoothly from ear level (0.15m) up to ceiling level (1.55m)
-            y = 0.85 + 0.70 * Math.sin(this.effectPhase * 1.5);
-          } else {
-            // Height channels DO NOT EXIST: Do NOT use height axis!
-            // Instead, run horizontal distance pulse on X/Z (in/out surround expansion) at ear level y=0
-            this.effectPhase += 0.012 * pace * dir;
-            const R = 1.05 + 0.45 * Math.sin(this.effectPhase * 2);
-            x = R * Math.sin(this.effectPhase);
-            z = R * Math.cos(this.effectPhase);
-            y = 0; // Strictly zero height
-          }
+          const R = 1.25;
+          this.effectPhase += 0.010 * pace * dir;
+          x = R * Math.sin(this.effectPhase);
+          z = R * Math.cos(this.effectPhase);
+          y = 0.85 + 0.70 * Math.sin(this.effectPhase * 1.5);
         } else if (this.activeEffect === 'vortex') {
           // Cosmic Vortex: Breathing spiral expanding from sweet spot out to perimeter and back
           this.effectPhase += 0.014 * pace * dir;
@@ -2896,29 +3084,24 @@ class App {
           const R = 0.28 + 1.22 * breath; // expands from 0.28m to 1.50m
           x = R * Math.sin(this.effectPhase);
           z = R * Math.cos(this.effectPhase);
-          y = hasHeight ? (0.75 * breath) : 0;
+          y = 0.75 * breath;
         } else if (this.activeEffect === 'swing') {
           // Binaural Swing: Soothing pendulum hammock sway across the ears (X and slight Z curve)
           this.effectPhase += 0.016 * pace * dir;
           x = 1.42 * Math.sin(this.effectPhase);
           z = 0.45 * Math.cos(this.effectPhase * 2);
-          y = hasHeight ? (0.20 + 0.45 * Math.pow(Math.sin(this.effectPhase), 2)) : 0;
+          y = 0.20 + 0.45 * Math.pow(Math.sin(this.effectPhase), 2);
         } else if (this.activeEffect === 'infinity') {
           this.effectPhase += 0.012 * pace * dir;
           x = 1.45 * Math.sin(this.effectPhase);
           z = 1.20 * Math.sin(this.effectPhase * 2);
-          if (hasHeight) {
-            // Height channels EXIST: Add 3D vertical swoop for best immersive surround experience!
-            y = 0.70 + 0.60 * Math.cos(this.effectPhase);
-          } else {
-            y = 0;
-          }
+          y = 0.70 + 0.60 * Math.cos(this.effectPhase);
         } else if (this.activeEffect === 'wave') {
           // Serpentine Wave: Refreshing 3D ribbon undulating diagonally through soundfield
           this.effectPhase += 0.012 * pace * dir;
           x = 1.40 * Math.sin(this.effectPhase);
           z = 1.15 * Math.sin(this.effectPhase * 2);
-          y = hasHeight ? (0.75 + 0.65 * Math.sin(this.effectPhase * 3)) : 0;
+          y = 0.75 + 0.65 * Math.sin(this.effectPhase * 3);
         } else if (this.activeEffect === 'tour') {
           // Speaker-to-speaker guided tour
           // If height channels exist, tour includes height channels at their 3D elevations!
@@ -2934,8 +3117,11 @@ class App {
             const curSpk = speakers[curIdx];
             const nxtSpk = speakers[nextIdx];
 
-            const curPos = this.visualizer._speakerToVizCoords(curSpk);
-            const nxtPos = this.visualizer._speakerToVizCoords(nxtSpk);
+            const getSpeakerPosition = this.visualizer.walkableSceneMode
+              ? speaker => this.visualizer._sceneSpeakerPosition(speaker)
+              : speaker => this.visualizer._speakerToVizCoords(speaker);
+            const curPos = getSpeakerPosition(curSpk);
+            const nxtPos = getSpeakerPosition(nxtSpk);
 
             const FACTOR = 0.75;
             const startX = curPos.x * FACTOR;
@@ -2987,6 +3173,130 @@ class App {
     document.getElementById('btn-load-new')?.addEventListener('click', () => {
       fileInput.click();
     });
+  }
+
+  _updateSceneHeading(scene = this.visualizer.scenes[this.visualizer.scene]) {
+    const title = document.getElementById('viz-stage-title');
+    const hint = document.getElementById('viz-stage-hint');
+    if (this.visualizer.walkableSceneMode) {
+      if (title) title.textContent = scene.title;
+      if (hint) hint.textContent = scene.hint;
+    } else if (this.visualizer.povFollowSensor) {
+      if (title) title.textContent = 'Speaker sphere';
+      if (hint) hint.textContent = 'SPHERICAL SPEAKER FIELD · FIRST-PERSON';
+    } else {
+      if (title) title.textContent = 'Speaker layout';
+      if (hint) hint.textContent = 'DRAG TO ORBIT · DRAG LISTENER TO MOVE';
+    }
+  }
+
+  _syncPovModeControls(active) {
+    const povButton = document.getElementById('btn-pov-lock');
+    const povToggle = document.getElementById('pov-lock-toggle');
+    const sceneButton = document.getElementById('btn-scene-pov-toggle');
+    const boundaryButton = document.getElementById('btn-boundary-toggle');
+    const outsideBoundaryToggle = document.getElementById('outside-boundary-toggle');
+    const roomRadiusSlider = document.getElementById('room-radius-slider');
+    const sceneExitButton = document.getElementById('btn-scene-pov-exit');
+
+    if (povButton) {
+      povButton.disabled = active;
+      povButton.setAttribute('aria-label', active
+        ? 'POV Mode is active; exit using the POV Mode controls'
+        : 'Toggle immersive first-person view');
+      povButton.title = active
+        ? 'Exit POV Mode using the POV Mode panel to return to your previous view.'
+        : 'Toggle immersive first-person view (P).';
+    }
+    if (povToggle) povToggle.disabled = active;
+    if (boundaryButton) boundaryButton.disabled = active;
+    if (outsideBoundaryToggle) outsideBoundaryToggle.disabled = active;
+    if (roomRadiusSlider) roomRadiusSlider.disabled = active;
+    sceneExitButton?.classList.toggle('visible', active);
+    if (sceneButton) {
+      sceneButton.textContent = active ? 'Exit POV Mode' : 'Enter POV Mode';
+      sceneButton.setAttribute('aria-pressed', String(active));
+      sceneButton.classList.toggle('active', active);
+    }
+    document.querySelector('.visualizer-panel')?.classList.toggle('scene-pov-mode', active);
+    document.querySelector('.visualizer-panel')?.classList.toggle('immersive-pov', this.visualizer.povFollowSensor);
+  }
+
+  _syncSceneSpeakerPositions() {
+    if (!this.engine || !this.visualizer) return;
+    const positions = this.visualizer.walkableSceneMode
+      ? this.visualizer.speakers.map(speaker => this.visualizer._sceneSpeakerPosition(speaker))
+      : null;
+    this.engine.setSceneSpeakerPositions(positions);
+  }
+
+  _setScenePovMode(active) {
+    if (active === this.visualizer.walkableSceneMode) return;
+
+    if (active) {
+      this.scenePovReturnState = {
+        povFollowSensor: this.visualizer.povFollowSensor,
+        x: this.visualizer.listenerMX,
+        y: this.visualizer.listenerMY,
+        z: this.visualizer.listenerMZ,
+        yaw: this.visualizer.yaw,
+        pitch: this.visualizer.pitch,
+        roll: this.visualizer.roll,
+        virtualYaw: this.virtualYaw,
+        virtualPitch: this.virtualPitch
+      };
+      if (this.activeEffect) this.stopEffect(false);
+      this.visualizer.setWalkableSceneMode(true);
+      this.visualizer.setPovFollowSensor(true);
+      this._syncSceneSpeakerPositions();
+      this.engine.setListenerPosition(
+        this.visualizer.listenerMX,
+        this.visualizer.listenerMY,
+        this.visualizer.listenerMZ
+      );
+      this._syncPovModeControls(true);
+      this._showStatus(`POV Mode: ${this.visualizer.scenes[this.visualizer.scene].title}`);
+    } else {
+      const previous = this.scenePovReturnState;
+      this.visualizer.setWalkableSceneMode(false);
+      this.engine.setSceneSpeakerPositions(null);
+      if (previous) {
+        this.visualizer.setPovFollowSensor(previous.povFollowSensor);
+        this.visualizer.setListenerPositionMeters(previous.x, previous.y, previous.z);
+        this.visualizer.updateHeadOrientation(previous.yaw, previous.pitch, previous.roll);
+        this.engine.setListenerPosition(previous.x, previous.y, previous.z);
+        this.engine.updateListenerOrientation(previous.yaw, previous.pitch, previous.roll);
+        this.virtualYaw = previous.virtualYaw;
+        this.virtualPitch = previous.virtualPitch;
+      }
+      this.scenePovReturnState = null;
+      this._syncPovModeControls(false);
+      this._showStatus('POV Mode closed · Previous view restored');
+    }
+
+    const povToggle = document.getElementById('pov-lock-toggle');
+    if (povToggle) povToggle.checked = this.visualizer.povFollowSensor;
+    const povButton = document.getElementById('btn-pov-lock');
+    povButton?.classList.toggle('active', this.visualizer.povFollowSensor);
+    povButton?.setAttribute('aria-pressed', String(this.visualizer.povFollowSensor));
+    const povBadge = document.getElementById('pov-lock-badge');
+    if (povBadge) {
+      povBadge.textContent = active
+        ? 'POV Mode'
+        : this.visualizer.povFollowSensor ? 'Immersive POV' : 'Orbit View';
+      povBadge.style.color = this.visualizer.povFollowSensor ? 'var(--accent-cyan)' : 'var(--text-muted)';
+      povBadge.style.background = this.visualizer.povFollowSensor ? 'rgba(34, 211, 238, 0.12)' : 'var(--bg-card-hover)';
+      povBadge.style.borderColor = this.visualizer.povFollowSensor ? 'rgba(34, 211, 238, 0.25)' : 'var(--border-subtle)';
+    }
+    const povLabel = document.getElementById('pov-btn-label');
+    if (povLabel) {
+      povLabel.textContent = active
+        ? 'POV Mode: On'
+        : `Immersive POV: ${this.visualizer.povFollowSensor ? 'On' : 'Off'}`;
+    }
+    this._updateSceneHeading();
+    this._updateHeightDisplay();
+    setTimeout(() => this._showStatus('Ready'), 1500);
   }
 
   _updateHeightDisplay() {

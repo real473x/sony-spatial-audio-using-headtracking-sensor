@@ -235,6 +235,7 @@ export class AudioEngine {
     this.lastLoadedFile = null;
     this.topSpeakerHeightScale = 1.0;
     this.speakerScale = 1.0;         // room size multiplier (1.0 = default 2m radius)
+    this.sceneSpeakerPositions = null;
     this.loopMode = 'none'; // 'none' | 'single' | 'all'
     this._onLoopCallback = null;
 
@@ -532,6 +533,35 @@ export class AudioEngine {
     }
   }
 
+  setSceneSpeakerPositions(positions) {
+    if (positions !== null && !Array.isArray(positions)) {
+      throw new TypeError('Scene speaker positions must be an array or null.');
+    }
+    this.sceneSpeakerPositions = positions?.map(position => ({ ...position })) || null;
+    this._updatePannerPositions();
+  }
+
+  _positionForSpeaker(index, speaker) {
+    const scenePosition = this.sceneSpeakerPositions?.[index];
+    if (scenePosition) {
+      return { x: scenePosition.x, y: scenePosition.y, z: -scenePosition.z };
+    }
+    return speakerToCartesian(speaker.azimuth, speaker.elevation, speaker.distance);
+  }
+
+  _updatePannerPositions() {
+    if (!this.audioContext || !this.layout) return;
+    const time = this.audioContext.currentTime;
+    this.layout.forEach((speaker, index) => {
+      const panner = this.panners[index];
+      if (!panner) return;
+      const position = this._positionForSpeaker(index, speaker);
+      panner.positionX.setValueAtTime(position.x, time);
+      panner.positionY.setValueAtTime(position.y, time);
+      panner.positionZ.setValueAtTime(position.z, time);
+    });
+  }
+
   play() {
     if (!this.audioBuffer || this.isPlaying) return;
     
@@ -626,7 +656,7 @@ export class AudioEngine {
       }
       if (speaker.baseDistance === undefined) speaker.baseDistance = speaker.distance;
       speaker.distance = speaker.baseDistance * this.speakerScale;
-      const pos = speakerToCartesian(speaker.azimuth, speaker.elevation, speaker.distance);
+      const pos = this._positionForSpeaker(i, speaker);
       
       const gain = ctx.createGain();
       gain.gain.value = 1.0;
@@ -1025,19 +1055,13 @@ export class AudioEngine {
   setTopSpeakerHeightScale(scale) {
     this.topSpeakerHeightScale = Math.max(0.0, Math.min(1.5, scale));
     if (!this.layout) return;
-    this.layout.forEach((sp, i) => {
+    this.layout.forEach((sp) => {
       if (sp.isHeight) {
         if (sp.baseElevation === undefined) sp.baseElevation = sp.elevation;
         sp.elevation = sp.baseElevation * this.topSpeakerHeightScale;
-        if (this.panners && this.panners[i] && this.audioContext) {
-          const pos = speakerToCartesian(sp.azimuth, sp.elevation, sp.distance);
-          const t = this.audioContext.currentTime;
-          this.panners[i].positionX.setValueAtTime(pos.x, t);
-          this.panners[i].positionY.setValueAtTime(pos.y, t);
-          this.panners[i].positionZ.setValueAtTime(pos.z, t);
-        }
       }
     });
+    this._updatePannerPositions();
   }
 
   /**
@@ -1048,19 +1072,13 @@ export class AudioEngine {
   setSpeakerScale(scale) {
     this.speakerScale = Math.max(0.1, scale);
     if (!this.layout) return;
-    this.layout.forEach((sp, i) => {
+    this.layout.forEach((sp) => {
       // Store the original layout distance once so we always scale from the source
       if (sp.baseDistance === undefined) sp.baseDistance = sp.distance;
       // Scale distance relative to original
       sp.distance = sp.baseDistance * this.speakerScale;
-      if (this.panners && this.panners[i] && this.audioContext) {
-        const pos = speakerToCartesian(sp.azimuth, sp.elevation, sp.distance);
-        const t = this.audioContext.currentTime;
-        this.panners[i].positionX.setValueAtTime(pos.x, t);
-        this.panners[i].positionY.setValueAtTime(pos.y, t);
-        this.panners[i].positionZ.setValueAtTime(pos.z, t);
-      }
     });
+    this._updatePannerPositions();
     console.log(`[AudioEngine] Speaker scale set to ${this.speakerScale.toFixed(2)}x (distance: ~${(2 * this.speakerScale).toFixed(1)}m)`);
   }
 
@@ -1175,7 +1193,7 @@ export class AudioEngine {
       // Apply current speaker scale (room size) – store baseDistance once per speaker
       if (speaker.baseDistance === undefined) speaker.baseDistance = speaker.distance;
       speaker.distance = speaker.baseDistance * this.speakerScale;
-      const pos = speakerToCartesian(speaker.azimuth, speaker.elevation, speaker.distance);
+      const pos = this._positionForSpeaker(i, speaker);
       
       // Gain node for individual channel volume
       const gain = ctx.createGain();

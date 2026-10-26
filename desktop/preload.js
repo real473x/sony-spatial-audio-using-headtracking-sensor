@@ -17,6 +17,9 @@ contextBridge.exposeInMainWorld('desktopAPI', {
   openBluetoothSettings: () => ipcRenderer.send('open-bluetooth-settings'),
   scanDevices: () => ipcRenderer.invoke('scan-devices'),
   restartTracker: () => ipcRenderer.invoke('restart-tracker'),
+  getGpuPreference: () => ipcRenderer.invoke('get-gpu-preference'),
+  setGpuPreference: (preference) => ipcRenderer.invoke('set-gpu-preference', preference),
+  restartApp: () => ipcRenderer.send('restart-app'),
 
   // Listeners for device and tracker events
   onDeviceStatusUpdate: (callback) => {
