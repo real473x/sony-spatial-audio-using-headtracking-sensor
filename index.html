@@ -118,6 +118,17 @@
             </div>
           </div>
 
+          <!-- Quick Spatial Effects (Phase 3) -->
+          <div class="quick-effects-bar" style="margin-top: 10px; display: flex; align-items: center; justify-content: space-between; gap: 6px;">
+            <span style="font-size: 10px; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px;">Auto-POV:</span>
+            <div style="display: flex; gap: 4px; flex: 1; justify-content: flex-end;">
+              <button class="quick-effect-btn" data-effect="orbit" title="Floor Orbit: Continuous circular sweep at ear level">🌀 Orbit</button>
+              <button class="quick-effect-btn" data-effect="midorbit" title="Mid-Air Orbit: Midway base and ceiling speakers">🛸 Mid-Air</button>
+              <button class="quick-effect-btn" data-effect="swing" title="Binaural Swing: Gentle soothing hammock sway">🛶 Swing</button>
+              <button class="quick-effect-btn stop-btn" id="btn-quick-effect-stop" title="Stop Auto-POV & Center listener position">⏹️ Center</button>
+            </div>
+          </div>
+
           <!-- Play Queue Drawer / Panel -->
           <div class="queue-panel" id="queue-panel" style="margin-top: 14px; border-top: 1px solid var(--border-subtle); padding-top: 12px;">
             <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px;">
@@ -273,6 +284,31 @@
               🔄 CW
             </button>
           </div>
+
+          <!-- Ambient Micro-Sway Anti-Fatigue (Phase 3) -->
+          <div style="margin-top: 14px; padding: 10px 12px; background: var(--bg-input); border-radius: var(--radius-sm); border: 1px solid var(--border-subtle);">
+            <div class="toggle-control" style="margin-bottom: 8px;">
+              <div class="toggle-info">
+                <div style="display: flex; align-items: center; gap: 6px;">
+                  <span class="toggle-label" style="font-size: 11.5px;">🌊 Ambient Micro-Sway</span>
+                  <span id="micro-sway-badge" style="font-size: 10px; font-family: var(--font-mono); color: var(--text-muted); font-weight: 600; background: rgba(255, 255, 255, 0.06); padding: 1px 6px; border-radius: 4px; border: 1px solid var(--border-subtle);">OFF</span>
+                </div>
+                <span class="toggle-sub" style="font-size: 10px;">Subtle anti-fatigue acoustic drift (±2.5°) for non-sensor headphones</span>
+              </div>
+              <label class="toggle-switch small">
+                <input type="checkbox" id="micro-sway-toggle">
+                <span class="toggle-slider"></span>
+              </label>
+            </div>
+            
+            <div class="slider-control" id="micro-sway-slider-container" style="opacity: 0.5; pointer-events: none; transition: opacity var(--transition-fast);">
+              <div class="slider-header" style="margin-bottom: 4px;">
+                <span class="slider-label" style="font-size: 10.5px;">Sway Intensity</span>
+                <span class="slider-value" id="micro-sway-intensity-val" style="font-size: 10.5px;">50%</span>
+              </div>
+              <input type="range" id="micro-sway-slider" min="10" max="100" step="5" value="50">
+            </div>
+          </div>
         </div>
       </div>
 
@@ -366,7 +402,44 @@
 
       <!-- Head Tracking Controls -->
       <div class="card">
-        <div class="card-title">Head Tracking</div>
+        <div class="card-title">Head Tracking &amp; Orientation</div>
+
+        <!-- Headphone Profile Selector (Phase 1) -->
+        <div style="margin-bottom: 14px; padding: 10px 12px; background: var(--bg-input); border-radius: var(--radius-sm); border: 1px solid var(--border-subtle);">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+            <div style="display: flex; align-items: center; gap: 6px;">
+              <span style="font-size: 13px;">🎧</span>
+              <span style="font-size: 12px; font-weight: 600; color: var(--text-primary);">Headphone Profile</span>
+            </div>
+            <span id="headphone-mode-badge" style="font-size: 10px; font-family: var(--font-mono); color: var(--accent-primary); font-weight: 600; background: rgba(56, 189, 248, 0.12); padding: 2px 7px; border-radius: 10px; border: 1px solid rgba(56, 189, 248, 0.25);">Standard</span>
+          </div>
+          <div style="display: flex; gap: 6px;">
+            <button class="action-btn secondary small profile-btn active" id="btn-profile-standard" style="flex: 1; padding: 6px 8px; font-size: 11px;">
+              🎧 Standard / Wired
+            </button>
+            <button class="action-btn secondary small profile-btn" id="btn-profile-sensor" style="flex: 1; padding: 6px 8px; font-size: 11px;">
+              🛰️ Motion Sensor
+            </button>
+          </div>
+          <div style="font-size: 10px; color: var(--text-muted); margin-top: 6px; line-height: 1.35;" id="headphone-profile-desc">
+            Standard mode: Silences sensor UDP warnings. Binaural HRTF 3D spatial audio works automatically over 3.5mm, USB-C, or regular Bluetooth earphones.
+          </div>
+        </div>
+
+        <!-- Virtual Head Look (Mouse & Keys) (Phase 2) -->
+        <div class="toggle-control" style="margin-bottom: 12px;">
+          <div class="toggle-info">
+            <div style="display: flex; align-items: center; gap: 6px;">
+              <span class="toggle-label">Virtual Head Look</span>
+              <span id="virtual-look-badge" style="font-size: 10px; font-family: var(--font-mono); color: var(--text-muted); font-weight: 600; background: rgba(255, 255, 255, 0.06); padding: 1px 6px; border-radius: 4px; border: 1px solid var(--border-subtle);">OFF</span>
+            </div>
+            <span class="toggle-sub">Rotate head via Right-Click/Alt+Drag, or Arrow keys (←/→ yaw, Shift+↑/↓ pitch)</span>
+          </div>
+          <label class="toggle-switch">
+            <input type="checkbox" id="virtual-look-toggle">
+            <span class="toggle-slider"></span>
+          </label>
+        </div>
 
         <div class="toggle-control" style="margin-bottom: 12px;">
           <div class="toggle-info">
@@ -631,32 +704,6 @@
         </button>
       </div>
 
-      <!-- ─── Fraunhofer MPEG-H VV Live Audio Stream Card ───────────────── -->
-      <div class="card" id="mpegh-vv-card">
-        <div class="card-header-toggle" style="display: flex; align-items: center; justify-content: space-between;">
-          <div class="card-title" style="margin-bottom: 0;">🎧 MPEG-H VV Live Stream</div>
-          <span class="slider-value" id="mpegh-vv-status-badge" style="color: var(--accent-success); font-family: var(--font-mono); font-size: 11px;">Checking...</span>
-        </div>
-        <div style="font-size: 11px; color: var(--text-muted); margin-top: 6px; line-height: 1.5;">
-          Hook Fraunhofer IIS MPEG-H VVPlayer audio directly into SpatialAudio with real-time 3D visualizer and head-tracking.
-        </div>
-        <div style="display: flex; gap: 8px; margin-top: 10px;">
-          <button class="action-btn primary" id="btn-hook-mpegh-audio" style="flex: 1; font-size: 11px; padding: 7px 10px;" title="Capture and stream live audio from MPEG-H VVPlayer">
-            🎙️ Hook Live Audio
-          </button>
-          <button class="action-btn secondary" id="btn-launch-mpegh-vv" style="flex: 1; font-size: 11px; padding: 7px 10px;" title="Launch official Fraunhofer MPEG-H VVPlayer">
-            🚀 Launch VVPlayer
-          </button>
-        </div>
-        <div id="mpegh-vv-streaming-bar" style="display: none; margin-top: 8px; padding: 8px 10px; background: rgba(16, 185, 129, 0.12); border: 1px solid rgba(16, 185, 129, 0.3); border-radius: var(--radius-sm); font-size: 11px; color: var(--accent-success); align-items: center; justify-content: space-between;">
-          <span>🟢 Live Audio Streaming Active</span>
-          <button id="btn-disconnect-mpegh-audio" style="background: none; border: none; color: #f43f5e; cursor: pointer; font-size: 11px; font-weight: 600;">Disconnect</button>
-        </div>
-        <div style="font-size: 10px; color: var(--text-muted); margin-top: 6px;">
-          📡 Head orientation is broadcast via OpenTrack UDP (127.0.0.1:4242) to synchronize VVPlayer in tandem.
-        </div>
-      </div>
-
       <!-- Info / Credits -->
       <div class="card">
         <div class="card-title">Decoders &amp; Formats</div>
@@ -666,18 +713,32 @@
           <div>• <strong>Third-party Tools:</strong> <span style="color: var(--text-muted);">OpenJOC &amp; Cavernize (Disabled)</span></div>
         </div>
 
-        <div class="card-title" style="margin-top: 14px;">Credits &amp; Open Source</div>
-        <p style="font-size: 11px; color: var(--text-secondary); line-height: 1.6;">
-          Renders discrete multichannel and object-based spatial audio with HRTF binaural synthesis.
-        </p>
-        <div style="margin-top: 8px; font-size: 11px; display: flex; flex-direction: column; gap: 4px;">
-          <div>• <a href="https://github.com/chyinan/OpenJOC" target="_blank" style="color: var(--accent-primary); text-decoration: none;">OpenJOC</a> by chyinan (Rust E-AC-3 JOC Object Decoder)</div>
-          <div>• <a href="https://github.com/VoidXH/Cavern" target="_blank" style="color: var(--accent-primary); text-decoration: none;">Cavern &amp; Cavernize</a> by VoidXH (7.1.4 Atmos Object Audio)</div>
-          <div>• <a href="https://github.com/NicholasSlattery/sony-head-tracker" target="_blank" style="color: var(--accent-primary); text-decoration: none;">sony-head-tracker</a> by Nicholas Slattery</div>
-          <div>• <a href="https://github.com/opentrack/opentrack" target="_blank" style="color: var(--accent-primary); text-decoration: none;">OpenTrack</a> head tracking suite</div>
-          <div>• <a href="https://github.com/expressjs/express" target="_blank" style="color: var(--accent-primary); text-decoration: none;">Express</a> &amp; <a href="https://github.com/websockets/ws" target="_blank" style="color: var(--accent-primary); text-decoration: none;">ws</a> for Node.js</div>
-          <div style="margin-top: 6px; padding-top: 6px; border-top: 1px dashed var(--border-subtle);">
-            <a href="REFERENCES.md" target="_blank" style="color: var(--accent-primary); text-decoration: none; font-weight: 600;">📖 Full References &amp; Attributions (REFERENCES.md) →</a>
+        <button class="action-btn secondary small" id="btn-view-supported-formats" style="width: 100%; font-size: 11px; padding: 6px 10px; display: flex; align-items: center; justify-content: center; gap: 6px; margin-bottom: 6px;" title="View list of audio formats supported by the current active decoder">
+          <span>📋</span>
+          <span>View Supported Formats</span>
+        </button>
+
+        <!-- ─── Credits & Open Source (Collapsible Section) ─── -->
+        <div style="margin-top: 14px; border-top: 1px solid rgba(255,255,255,0.06); padding-top: 12px;">
+          <div class="card-header-toggle" id="credits-collapse-toggle" style="cursor: pointer; display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px;" title="Click to show / hide credits & open source info">
+            <div class="card-title" style="margin-bottom: 0; font-size: 11.5px; color: var(--text-secondary);">📖 Credits &amp; Open Source</div>
+            <span class="card-toggle-icon" id="credits-collapse-icon" style="font-size: 11px; color: var(--text-muted); transition: transform var(--transition-fast); transform: rotate(-90deg);">▼</span>
+          </div>
+
+          <div class="credits-collapse-content hidden" id="credits-collapse-content" style="margin-top: 8px;">
+            <p style="font-size: 11px; color: var(--text-secondary); line-height: 1.6;">
+              Renders discrete multichannel and object-based spatial audio with HRTF binaural synthesis.
+            </p>
+            <div style="margin-top: 8px; font-size: 11px; display: flex; flex-direction: column; gap: 4px;">
+              <div>• <a href="https://github.com/chyinan/OpenJOC" target="_blank" style="color: var(--accent-primary); text-decoration: none;">OpenJOC</a> by chyinan (Rust E-AC-3 JOC Object Decoder)</div>
+              <div>• <a href="https://github.com/VoidXH/Cavern" target="_blank" style="color: var(--accent-primary); text-decoration: none;">Cavern &amp; Cavernize</a> by VoidXH (7.1.4 Atmos Object Audio)</div>
+              <div>• <a href="https://github.com/NicholasSlattery/sony-head-tracker" target="_blank" style="color: var(--accent-primary); text-decoration: none;">sony-head-tracker</a> by Nicholas Slattery</div>
+              <div>• <a href="https://github.com/opentrack/opentrack" target="_blank" style="color: var(--accent-primary); text-decoration: none;">OpenTrack</a> head tracking suite</div>
+              <div>• <a href="https://github.com/expressjs/express" target="_blank" style="color: var(--accent-primary); text-decoration: none;">Express</a> &amp; <a href="https://github.com/websockets/ws" target="_blank" style="color: var(--accent-primary); text-decoration: none;">ws</a> for Node.js</div>
+              <div style="margin-top: 6px; padding-top: 6px; border-top: 1px dashed var(--border-subtle);">
+                <a href="REFERENCES.md" target="_blank" style="color: var(--accent-primary); text-decoration: none; font-weight: 600;">📖 Full References &amp; Attributions (REFERENCES.md) →</a>
+              </div>
+            </div>
           </div>
         </div>
 
@@ -689,6 +750,7 @@
           </div>
 
           <div class="custom-decoders-collapse-content hidden" id="custom-decoders-collapse-content" style="margin-top: 8px;">
+            <!-- Section 1: Use Custom Decoders -->
             <div class="custom-decoder-wrapper" style="border: 1px solid var(--border-subtle); border-radius: var(--radius-sm); background: var(--bg-input); padding: 8px 10px;">
               <div class="toggle-control small-toggle" style="margin-bottom: 0;">
                 <div class="toggle-info">
@@ -696,7 +758,7 @@
                     <span class="toggle-label" style="font-size: 11px; font-weight: 600;">Use Custom Decoders</span>
                     <span id="badge-custom-decoders" class="solo-status-badge" style="font-size: 9.5px; padding: 1px 5px;">Off</span>
                   </div>
-                  <span class="toggle-sub" style="font-size: 10px;">Enable proprietary AC-4 &amp; 360 RA engines</span>
+                  <span class="toggle-sub" style="font-size: 10px;">Enable ffcodec64.dll plugin</span>
                 </div>
                 <label class="toggle-switch small">
                   <input type="checkbox" id="toggle-custom-decoders">
@@ -706,43 +768,215 @@
 
               <!-- Sub-engines list (hidden by default unless master toggle is ON) -->
               <div class="custom-decoders-container hidden" id="custom-decoders-container" style="margin-top: 10px; padding-top: 8px; border-top: 1px solid rgba(255,255,255,0.06);">
-                <!-- Dolby AC-4 Atmos Toggle -->
-                <div class="toggle-control small-toggle" style="margin-bottom: 8px; padding-bottom: 6px; border-bottom: 1px solid rgba(255,255,255,0.06);">
+                <!-- ffcodec64 Toggle -->
+                <div class="toggle-control small-toggle" style="margin-bottom: 0;">
                   <div class="toggle-info">
                     <div style="display: flex; align-items: center; gap: 6px;">
-                      <span class="toggle-label" style="font-size: 11px; font-weight: 600;">Dolby AC-4 Atmos</span>
+                      <span class="toggle-label" style="font-size: 11px; font-weight: 600;">ffcodec64</span>
                       <span id="badge-engine-ffcodec" class="solo-status-badge" style="font-size: 9.5px; padding: 1px 5px;">Checking...</span>
                     </div>
-                    <span class="toggle-sub" style="font-size: 10px;">Dolby AC-4 Atmos native decoder engine (multichannel PCM)</span>
+                    <span class="toggle-sub" style="font-size: 10px;">ffcodec64.dll plugin (Dolby AC-4 Atmos multichannel PCM)</span>
                   </div>
                   <label class="toggle-switch small">
                     <input type="checkbox" id="toggle-engine-ffcodec" checked>
                     <span class="toggle-slider"></span>
                   </label>
                 </div>
+              </div>
+            </div>
 
-                <!-- 360 RA & MPEG-H 3D Toggle -->
-                <div class="toggle-control small-toggle" style="margin-bottom: 8px;">
-                  <div class="toggle-info">
-                    <div style="display: flex; align-items: center; gap: 6px;">
-                      <span class="toggle-label" style="font-size: 11px; font-weight: 600;">360 RA &amp; MPEG-H 3D</span>
-                      <span id="badge-engine-mpegh" class="solo-status-badge" style="font-size: 9.5px; padding: 1px 5px;">Checking...</span>
-                    </div>
-                    <span class="toggle-sub" style="font-size: 10px;">360 RA &amp; MPEG-H 3D spatial engine</span>
+            <!-- Section 2: MPEG-H VV Live Stream (Separate section below Use Custom Decoders) -->
+            <div class="custom-decoder-wrapper" id="mpegh-vv-section" style="margin-top: 10px; border: 1px solid var(--border-subtle); border-radius: var(--radius-sm); background: var(--bg-input); padding: 8px 10px;">
+              <div class="toggle-control small-toggle" style="margin-bottom: 0;">
+                <div class="toggle-info">
+                  <div style="display: flex; align-items: center; gap: 6px;">
+                    <span class="toggle-label" style="font-size: 11px; font-weight: 600;">🎧 MPEG-H VV Live Stream</span>
+                    <span id="badge-mpegh-toggle" class="solo-status-badge" style="font-size: 9.5px; padding: 1px 5px; background: rgba(255,255,255,0.06); color: var(--text-muted); border-color: rgba(255,255,255,0.1);">Off</span>
                   </div>
-                  <label class="toggle-switch small">
-                    <input type="checkbox" id="toggle-engine-mpegh">
-                    <span class="toggle-slider"></span>
-                  </label>
+                  <span class="toggle-sub" style="font-size: 10px;">Hook Fraunhofer MPEG-H VVPlayer 3D audio</span>
                 </div>
+                <label class="toggle-switch small">
+                  <input type="checkbox" id="toggle-mpegh-feature">
+                  <span class="toggle-slider"></span>
+                </label>
+              </div>
 
-                <!-- Quick Launch 360 RA Player Button -->
-                <div style="display: flex; gap: 6px; align-items: center; margin-top: 4px;">
-                  <button class="action-btn secondary small" id="btn-launch-vvplayer" style="flex: 1; padding: 4px 8px; font-size: 10.5px; display: flex; align-items: center; justify-content: center; gap: 4px;" title="Launch 360 RA & MPEG-H 3D Player">
-                    <span>🚀</span>
-                    <span>Launch 360 RA &amp; MPEG-H Player</span>
+              <!-- Inner Content (collapsed/hidden when toggled OFF) -->
+              <div class="mpegh-content-container hidden" id="mpegh-content-container" style="margin-top: 10px; padding-top: 8px; border-top: 1px solid rgba(255,255,255,0.06);">
+                <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px;">
+                  <span style="font-size: 10.5px; color: var(--text-secondary);">VVPlayer App Status:</span>
+                  <span class="slider-value" id="mpegh-vv-status-badge" style="color: var(--accent-success); font-family: var(--font-mono); font-size: 10.5px;">Checking...</span>
+                </div>
+                <div style="display: flex; gap: 6px;">
+                  <button class="action-btn primary" id="btn-hook-mpegh-audio" style="flex: 1; font-size: 10.5px; padding: 6px 8px;" title="Capture and stream live audio from MPEG-H VVPlayer">
+                    🎙️ Hook Live Audio
+                  </button>
+                  <button class="action-btn secondary" id="btn-launch-mpegh-vv" style="flex: 1; font-size: 10.5px; padding: 6px 8px;" title="Launch official Fraunhofer MPEG-H VVPlayer">
+                    🚀 Launch VVPlayer
                   </button>
                 </div>
+                <div id="mpegh-vv-streaming-bar" style="display: none; margin-top: 8px; padding: 6px 8px; background: rgba(16, 185, 129, 0.12); border: 1px solid rgba(16, 185, 129, 0.3); border-radius: var(--radius-sm); font-size: 10.5px; color: var(--accent-success); align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 6px;">
+                  <span>🟢 Live Audio Streaming Active</span>
+                  <div style="display: flex; align-items: center; gap: 6px;">
+                    <button id="btn-toggle-mpegh-mute" style="background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.2); border-radius: 4px; padding: 2px 6px; color: var(--text-primary); cursor: pointer; font-size: 10px;" title="Toggle between hearing VVPlayer directly (Visualizer only, 0 echo) or SpatialAudio head-tracked output">
+                      🔇 Mute Output
+                    </button>
+                    <button id="btn-disconnect-mpegh-audio" style="background: none; border: none; color: #f43f5e; cursor: pointer; font-size: 10.5px; font-weight: 600;">Disconnect</button>
+                  </div>
+                </div>
+                <div style="font-size: 10px; color: var(--text-muted); margin-top: 6px; line-height: 1.4;">
+                  💡 Plays proprietary Sony 360 RA &amp; MPEG-H 3D files. "Hook Live Audio" captures playback into SpatialAudio with 3D head tracking.
+                </div>
+              </div>
+            </div>
+
+            <!-- Section 3: JOC Object Decoder (E-AC-3 Dolby Atmos) (Isolated Pre-Processor) -->
+            <div class="custom-decoder-wrapper" id="joc-decoder-section" style="margin-top: 10px; border: 1px solid var(--border-subtle); border-radius: var(--radius-sm); background: var(--bg-input); padding: 10px 12px;">
+              <div class="toggle-control small-toggle" style="margin-bottom: 0;">
+                <div class="toggle-info">
+                  <div style="display: flex; align-items: center; gap: 6px;">
+                    <span class="toggle-label" style="font-size: 11.5px; font-weight: 600;">🔬 JOC Object Decoder (Atmos)</span>
+                    <span id="badge-joc-toggle" class="solo-status-badge" style="font-size: 9.5px; padding: 1px 5px; background: rgba(255,255,255,0.06); color: var(--text-muted); border-color: rgba(255,255,255,0.1);">Off</span>
+                  </div>
+                  <span class="toggle-sub" style="font-size: 10px;">Extract full 7.1.4 discrete Atmos objects via OpenJOC / Cavernize</span>
+                </div>
+                <label class="toggle-switch small">
+                  <input type="checkbox" id="toggle-joc-feature">
+                  <span class="toggle-slider"></span>
+                </label>
+              </div>
+
+              <!-- Inner Content (collapsed/hidden when toggled OFF) -->
+              <div class="joc-content-container hidden" id="joc-content-container" style="margin-top: 12px; padding-top: 10px; border-top: 1px solid rgba(255,255,255,0.06);">
+                
+                <!-- ── Step 1: Select Audio File ── -->
+                <div class="joc-step-block" style="margin-bottom: 12px;">
+                  <div style="display: flex; align-items: center; gap: 6px; margin-bottom: 6px;">
+                    <span class="joc-step-badge">1</span>
+                    <span style="font-size: 11px; font-weight: 600; color: var(--text-primary);">Select File to Decode</span>
+                  </div>
+                  <div style="background: rgba(0,0,0,0.28); border: 1px solid var(--border-subtle); border-radius: var(--radius-sm); padding: 8px 10px;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; gap: 6px;">
+                      <div id="joc-current-file-name" style="font-size: 11px; color: var(--text-primary); font-family: var(--font-mono); font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1;">No file selected</div>
+                      <button class="action-btn secondary small" id="btn-joc-browse-file" style="padding: 3px 8px; font-size: 10px; flex-shrink: 0;" title="Choose an .eac3 / .m4a file from disk">📁 Browse File...</button>
+                    </div>
+                    <div id="joc-file-detection-hint" style="font-size: 9.5px; color: var(--text-muted); margin-top: 4px;">Load an .eac3 or .m4a file containing Dolby Atmos JOC metadata.</div>
+                  </div>
+                </div>
+
+                <!-- ── Step 2: Choose Engine & Decode ── -->
+                <div class="joc-step-block" style="margin-bottom: 12px;">
+                  <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px;">
+                    <div style="display: flex; align-items: center; gap: 6px;">
+                      <span class="joc-step-badge">2</span>
+                      <span style="font-size: 11px; font-weight: 600; color: var(--text-primary);">Decode to Discrete Layout</span>
+                    </div>
+                    <select id="joc-target-layout-select" style="padding: 2px 6px; font-size: 10px; background: var(--bg-card); color: var(--text-primary); border: 1px solid var(--border-subtle); border-radius: 4px;">
+                      <option value="7.1.4" selected>7.1.4 (12ch: 8 Surround + 4 Height)</option>
+                      <option value="7.1.2">7.1.2 (10ch: 8 Surround + 2 Height)</option>
+                      <option value="5.1.4">5.1.4 (10ch: 6 Surround + 4 Height)</option>
+                      <option value="5.1.2">5.1.2 (8ch: 6 Surround + 2 Height)</option>
+                      <option value="9.1.6">9.1.6 (16ch: 10 Surround + 6 Height)</option>
+                    </select>
+                  </div>
+                  <div style="display: flex; gap: 6px;">
+                    <button class="action-btn primary small" id="btn-joc-decode-openjoc" style="flex: 1; font-size: 11px; padding: 7px 6px; display: flex; align-items: center; justify-content: center; gap: 5px;" title="Decode with OpenJOC clean-room Rust engine">
+                      <span>🦀</span> <span>Decode with OpenJOC</span>
+                    </button>
+                    <button class="action-btn secondary small" id="btn-joc-decode-cavernize" style="flex: 1; font-size: 11px; padding: 7px 6px; display: flex; align-items: center; justify-content: center; gap: 5px;" title="Decode with Cavernize .NET engine">
+                      <span>🌌</span> <span>Cavernize</span>
+                    </button>
+                    <button class="action-btn secondary small" id="btn-joc-cancel" style="padding: 7px 10px; color: #f43f5e;" disabled title="Cancel running decode process">
+                      ⏹️
+                    </button>
+                  </div>
+
+                  <!-- Dynamic Animated Progress Bar Section -->
+                  <div id="joc-progress-wrapper" class="hidden" style="margin-top: 8px; background: rgba(0,0,0,0.3); border: 1px solid rgba(34, 211, 238, 0.25); border-radius: var(--radius-sm); padding: 8px 10px;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 5px; font-size: 10px;">
+                      <span id="joc-progress-label" style="color: var(--accent-cyan); font-weight: 600;">Extracting Atmos objects...</span>
+                      <span id="joc-progress-percent" style="font-family: var(--font-mono); color: var(--text-primary); font-weight: 600;">0%</span>
+                    </div>
+                    <div class="joc-progress-track">
+                      <div class="joc-progress-bar" id="joc-progress-bar"></div>
+                    </div>
+                    <div style="display: flex; justify-content: space-between; margin-top: 4px; font-size: 9px; color: var(--text-muted);">
+                      <span id="joc-progress-status">Running in background child process...</span>
+                      <span id="joc-progress-elapsed" style="font-family: var(--font-mono);">0.0s</span>
+                    </div>
+                  </div>
+
+                  <!-- Collapsible Log Details -->
+                  <div style="margin-top: 6px;">
+                    <div id="joc-log-toggle" style="display: flex; align-items: center; justify-content: space-between; cursor: pointer; font-size: 9.5px; color: var(--text-muted); padding: 2px 0;" title="Click to show / hide terminal output">
+                      <span>Console Output Details</span>
+                      <span id="joc-log-toggle-icon">▼</span>
+                    </div>
+                    <div id="joc-log-collapsible" class="hidden" style="margin-top: 4px;">
+                      <div style="display: flex; justify-content: flex-end; margin-bottom: 2px;">
+                        <button id="btn-joc-clear-log" style="background: none; border: none; color: var(--text-muted); font-size: 9px; cursor: pointer; text-decoration: underline;">Clear</button>
+                      </div>
+                      <div id="joc-console-log" style="background: rgba(0, 0, 0, 0.5); border: 1px solid var(--border-subtle); border-radius: var(--radius-sm); padding: 6px 8px; font-family: var(--font-mono); font-size: 9px; line-height: 1.4; color: #a5f3fc; max-height: 80px; overflow-y: auto; white-space: pre-wrap; word-break: break-all;">Standby. Select a decoder above to begin extraction.</div>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- ── Step 3: Load Result & Play ── -->
+                <div class="joc-step-block" style="margin-bottom: 6px;">
+                  <div style="display: flex; align-items: center; gap: 6px; margin-bottom: 6px;">
+                    <span class="joc-step-badge">3</span>
+                    <span style="font-size: 11px; font-weight: 600; color: var(--text-primary);">Load &amp; Play 7.1.4 Audio</span>
+                  </div>
+                  <div style="display: flex; gap: 6px;">
+                    <button class="action-btn primary small" id="btn-joc-load-result" style="flex: 1.3; font-size: 11px; padding: 7px 8px; background: linear-gradient(135deg, #059669, #10b981);" disabled title="Load and play the extracted 7.1.4 discrete multichannel PCM file">
+                      ▶️ Load Decoded Result
+                    </button>
+                    <button class="action-btn secondary small" id="btn-joc-restore-original" style="flex: 1; font-size: 11px; padding: 7px 8px;" disabled title="Restore and re-load original input audio file">
+                      ↩️ Restore Original
+                    </button>
+                  </div>
+
+                  <!-- Integrated Playback Controls (Active when decoded result is loaded!) -->
+                  <div id="joc-player-controls" class="hidden" style="margin-top: 10px; background: rgba(16, 185, 129, 0.08); border: 1px solid rgba(16, 185, 129, 0.25); border-radius: var(--radius-sm); padding: 8px 10px;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+                      <span style="font-size: 10px; font-weight: 600; color: var(--accent-success); display: flex; align-items: center; gap: 4px;">
+                        <span>🎧</span> <span>Now Playing: 7.1.4 Atmos PCM</span>
+                      </span>
+                      <span id="joc-now-playing-time" style="font-size: 9.5px; font-family: var(--font-mono); color: var(--text-secondary);">0:00 / 0:00</span>
+                    </div>
+
+                    <!-- Mini Transport Buttons -->
+                    <div style="display: flex; align-items: center; justify-content: center; gap: 8px; margin-bottom: 6px;">
+                      <button class="transport-btn small" id="btn-joc-prev" title="Previous / Restart Track" style="width: 28px; height: 28px; font-size: 11px; border-radius: 50%;">⏮</button>
+                      <button class="transport-btn primary small" id="btn-joc-play-pause" title="Play / Pause" style="width: 34px; height: 34px; font-size: 13px; border-radius: 50%;">▶</button>
+                      <button class="transport-btn small" id="btn-joc-stop" title="Stop" style="width: 28px; height: 28px; font-size: 11px; border-radius: 50%;">⏹</button>
+                      <button class="transport-btn small" id="btn-joc-next" title="Next Track" style="width: 28px; height: 28px; font-size: 11px; border-radius: 50%;">⏭</button>
+                    </div>
+
+                    <!-- Mini Seek Bar -->
+                    <div style="display: flex; align-items: center; gap: 6px;">
+                      <input type="range" id="joc-seek-bar" min="0" max="1000" value="0" style="flex: 1; height: 4px; accent-color: var(--accent-success); cursor: pointer;">
+                    </div>
+                  </div>
+                </div>
+
+                <!-- Decoder Binaries Status in tools/ -->
+                <div style="margin-top: 10px; padding-top: 6px; border-top: 1px dashed var(--border-subtle); font-size: 9.5px; display: flex; flex-direction: column; gap: 3px;">
+                  <div style="display: flex; justify-content: space-between;">
+                    <span style="color: var(--text-muted);">openjoc.exe:</span>
+                    <span id="joc-status-openjoc" style="color: var(--text-muted); font-family: var(--font-mono);">Checking...</span>
+                  </div>
+                  <div style="display: flex; justify-content: space-between;">
+                    <span style="color: var(--text-muted);">Cavernize.exe:</span>
+                    <span id="joc-status-cavernize" style="color: var(--text-muted); font-family: var(--font-mono);">Checking...</span>
+                  </div>
+                  <div style="margin-top: 3px; display: flex; justify-content: space-between; align-items: center;">
+                    <a href="https://github.com/chyinan/OpenJOC/releases" target="_blank" style="color: var(--accent-primary); text-decoration: none; font-size: 9.5px;">Get OpenJOC ↗</a>
+                    <a href="https://github.com/VoidXH/Cavern/releases" target="_blank" style="color: var(--accent-primary); text-decoration: none; font-size: 9.5px;">Get Cavernize ↗</a>
+                    <button id="btn-joc-open-tools" style="background: none; border: none; color: var(--accent-cyan); font-size: 9.5px; cursor: pointer; text-decoration: underline; padding: 0;">Open tools/ 📂</button>
+                  </div>
+                </div>
+
               </div>
             </div>
           </div>
@@ -757,8 +991,277 @@
         <span class="keyboard-hint"><span class="key">W</span><span class="key">A</span><span class="key">S</span><span class="key">D</span> Walk</span>
         <span class="keyboard-hint"><span class="key">Space</span> Play/Pause</span>
         <span class="keyboard-hint"><span class="key">R</span> Recenter</span>
+        <span class="keyboard-hint help-hint" id="btn-footer-help" style="cursor: pointer; user-select: none; transition: var(--transition-fast);" title="Spatial Layout, 3D Plane &amp; Dolby AC-4 Guide">
+          <span class="key" style="color: var(--accent-primary); font-weight: 700;">?</span> Help Guide
+        </span>
       </div>
     </footer>
+  </div>
+
+  <!-- ─── Global Modal Overlay ─────────────────────────────────────────── -->
+  <div class="modal-overlay" id="app-modal-overlay">
+    <!-- 1. ffcodec64 Required Modal -->
+    <div class="modal-dialog hidden" id="modal-ffcodec-prompt">
+      <div class="modal-header">
+        <div class="modal-title">
+          <span style="font-size: 16px;">⚡</span>
+          <span>ffcodec64.dll Required</span>
+        </div>
+        <button class="modal-close-btn" id="modal-close-ffcodec" title="Close dialog">✕</button>
+      </div>
+      <div class="modal-body">
+        <div style="display: flex; gap: 14px; align-items: flex-start; margin-bottom: 14px;">
+          <div style="width: 44px; height: 44px; border-radius: var(--radius-sm); background: rgba(108, 122, 255, 0.15); border: 1px solid rgba(108, 122, 255, 0.3); display: flex; align-items: center; justify-content: center; font-size: 22px; flex-shrink: 0;">
+            🎧
+          </div>
+          <div>
+            <div style="font-weight: 600; color: var(--text-primary); font-size: 13px; margin-bottom: 4px;" id="modal-ffcodec-filename">
+              Track Name
+            </div>
+            <div style="font-size: 11.5px; color: var(--text-secondary); line-height: 1.5;">
+              This file contains <strong style="color: var(--text-primary);">Dolby AC-4 / Atmos</strong> audio which requires the <code style="font-family: var(--font-mono); color: var(--accent-primary); background: rgba(108, 122, 255, 0.12); padding: 1px 4px; border-radius: 4px;">ffcodec64.dll</code> decoder plugin to render multichannel spatial audio.
+            </div>
+          </div>
+        </div>
+
+        <div style="background: var(--bg-input); border: 1px solid var(--border-subtle); border-radius: var(--radius-sm); padding: 10px 12px; margin-bottom: 14px;">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+            <span style="font-size: 11px; font-weight: 600; color: var(--text-primary);">ffcodec64 Plugin Status:</span>
+            <span id="modal-ffcodec-status-badge" style="font-size: 10.5px; font-weight: 600; padding: 2px 7px; border-radius: var(--radius-full); background: rgba(255,255,255,0.06); color: var(--text-muted);">Checking...</span>
+          </div>
+          <div style="font-size: 10.5px; color: var(--text-muted); line-height: 1.4;">
+            By default, custom decoders are disabled. Enabling this option will turn on <code style="font-family: var(--font-mono);">ffcodec64.dll</code> for seamless multi-channel PCM decoding.
+          </div>
+        </div>
+
+        <div style="font-size: 11px; color: var(--text-secondary);">
+          Would you like to enable ffcodec64 now, or view the formats supported by the standard decoder?
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="action-btn secondary small" id="btn-modal-ffcodec-formats" style="padding: 7px 12px; font-size: 11px;">
+          📋 Supported Formats
+        </button>
+        <button class="action-btn secondary small" id="btn-modal-ffcodec-cancel" style="padding: 7px 12px; font-size: 11px;">
+          Don't Enable
+        </button>
+        <button class="action-btn primary small" id="btn-modal-ffcodec-enable" style="padding: 7px 14px; font-size: 11px; font-weight: 600;">
+          ⚡ Enable ffcodec64 &amp; Play
+        </button>
+      </div>
+    </div>
+
+    <!-- 2. Supported Formats Dialog (Current Decoder) -->
+    <div class="modal-dialog hidden" id="modal-supported-formats" style="max-width: 600px;">
+      <div class="modal-header">
+        <div class="modal-title">
+          <span style="font-size: 16px;">📋</span>
+          <span>Formats Supported by Current Decoder</span>
+        </div>
+        <button class="modal-close-btn" id="modal-close-formats" title="Close dialog">✕</button>
+      </div>
+      <div class="modal-body">
+        <div style="padding: 8px 12px; background: rgba(56, 189, 248, 0.08); border: 1px solid rgba(56, 189, 248, 0.2); border-radius: var(--radius-sm); margin-bottom: 14px; font-size: 11.5px; color: var(--text-secondary); line-height: 1.5;">
+          <div style="font-weight: 600; color: var(--text-primary); margin-bottom: 2px;">
+            Standard Decoder Mode Active
+          </div>
+          <span id="modal-formats-reason">Custom decoders (ffcodec64.dll) are currently OFF. Below are the audio and surround formats supported natively without external plugins:</span>
+        </div>
+
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 14px;">
+          <div style="background: var(--bg-input); border: 1px solid var(--border-subtle); border-radius: var(--radius-sm); padding: 10px 12px;">
+            <div style="font-weight: 600; color: var(--text-primary); font-size: 11.5px; margin-bottom: 4px; display: flex; align-items: center; gap: 5px;">
+              <span>🎵</span> Lossless High-Res Audio
+            </div>
+            <div style="font-size: 10.5px; color: var(--text-secondary); line-height: 1.5;">
+              • <strong>FLAC</strong> (<code style="font-family: var(--font-mono);">.flac</code>) — Up to 7.1 Surround<br>
+              • <strong>WAV</strong> (<code style="font-family: var(--font-mono);">.wav</code>) — 1.0 Mono to 22.2 UHD<br>
+              • <strong>AIFF</strong> (<code style="font-family: var(--font-mono);">.aif</code>, <code style="font-family: var(--font-mono);">.aiff</code>)
+            </div>
+          </div>
+
+          <div style="background: var(--bg-input); border: 1px solid var(--border-subtle); border-radius: var(--radius-sm); padding: 10px 12px;">
+            <div style="font-weight: 600; color: var(--text-primary); font-size: 11.5px; margin-bottom: 4px; display: flex; align-items: center; gap: 5px;">
+              <span>🎧</span> Standard &amp; Web Formats
+            </div>
+            <div style="font-size: 10.5px; color: var(--text-secondary); line-height: 1.5;">
+              • <strong>MP3</strong> (<code style="font-family: var(--font-mono);">.mp3</code>)<br>
+              • <strong>AAC / M4A</strong> (<code style="font-family: var(--font-mono);">.m4a</code>, <code style="font-family: var(--font-mono);">.aac</code>)<br>
+              • <strong>OGG Vorbis</strong> (<code style="font-family: var(--font-mono);">.ogg</code>)<br>
+              • <strong>Opus</strong> (<code style="font-family: var(--font-mono);">.opus</code>, <code style="font-family: var(--font-mono);">.weba</code>)
+            </div>
+          </div>
+
+          <div style="background: var(--bg-input); border: 1px solid var(--border-subtle); border-radius: var(--radius-sm); padding: 10px 12px;">
+            <div style="font-weight: 600; color: var(--text-primary); font-size: 11.5px; margin-bottom: 4px; display: flex; align-items: center; gap: 5px;">
+              <span>🔊</span> Multichannel Surround Beds
+            </div>
+            <div style="font-size: 10.5px; color: var(--text-secondary); line-height: 1.5;">
+              • <strong>5.1 &amp; 7.1 Surround</strong> (FLAC / WAV)<br>
+              • <strong>AC-3 Dolby Digital</strong> (<code style="font-family: var(--font-mono);">.ac3</code>)<br>
+              • <strong>Quadraphonic 4.0</strong>
+            </div>
+          </div>
+
+          <div style="background: var(--bg-input); border: 1px solid var(--border-subtle); border-radius: var(--radius-sm); padding: 10px 12px;">
+            <div style="font-weight: 600; color: var(--text-primary); font-size: 11.5px; margin-bottom: 4px; display: flex; align-items: center; gap: 5px;">
+              <span>🛰️</span> Live 3D Spatial Stream
+            </div>
+            <div style="font-size: 10.5px; color: var(--text-secondary); line-height: 1.5;">
+              • <strong>MPEG-H VVPlayer</strong> live audio hook<br>
+              • Real-time 3D spatial panner<br>
+              • Head-tracking orientation sync
+            </div>
+          </div>
+        </div>
+
+        <div style="background: rgba(244, 63, 94, 0.08); border: 1px solid rgba(244, 63, 94, 0.2); border-radius: var(--radius-sm); padding: 8px 12px; font-size: 11px; color: var(--text-secondary); line-height: 1.5;">
+          <strong style="color: #f43f5e;">⚠️ Requires ffcodec64.dll plugin:</strong>
+          Dolby AC-4 (<code style="font-family: var(--font-mono);">.ac4</code>), Dolby TrueHD Atmos (<code style="font-family: var(--font-mono);">.thd</code>, <code style="font-family: var(--font-mono);">.truehd</code>), and E-AC-3 JOC.
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="action-btn secondary small" id="btn-modal-formats-close" style="padding: 7px 14px; font-size: 11px;">
+          Close
+        </button>
+        <button class="action-btn primary small" id="btn-modal-formats-enable-ffcodec" style="padding: 7px 14px; font-size: 11px; font-weight: 600;">
+          ⚡ Enable ffcodec64
+        </button>
+      </div>
+    </div>
+
+    <!-- 3. Spatial Layout & Dolby AC-4 Guide Modal -->
+    <div class="modal-dialog hidden" id="modal-spatial-help" style="max-width: 620px;">
+      <div class="modal-header">
+        <div class="modal-title">
+          <span style="font-size: 16px;">📖</span>
+          <span>Spatial Layout &amp; Audio Guide</span>
+        </div>
+        <button class="modal-close-btn" id="modal-close-help" title="Close dialog">✕</button>
+      </div>
+      <div class="modal-body" style="max-height: 70vh; overflow-y: auto;">
+        <!-- Section 1 -->
+        <div style="margin-bottom: 16px;">
+          <div style="font-weight: 700; color: var(--text-primary); font-size: 12.5px; margin-bottom: 6px; display: flex; align-items: center; gap: 6px;">
+            <span>🌐</span> 1. What Does the 3D Plane Display?
+          </div>
+          <p style="font-size: 11px; color: var(--text-secondary); line-height: 1.6; margin-bottom: 6px;">
+            The 3D visualizer plane displays the <strong>actual discrete audio channels</strong> currently being fed into the 3D spatial panner.
+          </p>
+          <p style="font-size: 11px; color: var(--text-secondary); line-height: 1.6;">
+            Each speaker sphere in 3D space represents a dedicated Web Audio <code style="font-family: var(--font-mono); color: var(--accent-primary);">PannerNode</code> placed at exact ITU-R coordinate positions (azimuth, elevation, and distance) relative to your head. As you turn your head wearing the Sony motion sensor, the binaural HRTF rotates the soundfield in real time so sounds stay anchored in 3D space.
+          </p>
+        </div>
+
+        <!-- Section 2 -->
+        <div style="margin-bottom: 16px; background: var(--bg-input); border: 1px solid var(--border-subtle); border-radius: var(--radius-sm); padding: 12px;">
+          <div style="font-weight: 700; color: var(--text-primary); font-size: 12.5px; margin-bottom: 6px; display: flex; align-items: center; gap: 6px;">
+            <span>🎧</span> 2. Why Does a Dolby AC-4 File Show 5.1 When 7.1 Is Selected?
+          </div>
+          <p style="font-size: 11px; color: var(--text-secondary); line-height: 1.6; margin-bottom: 6px;">
+            There is a fundamental difference between <strong>what the AC-4 standard allows</strong> vs. <strong>how your specific file was encoded</strong>:
+          </p>
+          <ul style="font-size: 11px; color: var(--text-secondary); line-height: 1.6; margin-left: 16px; margin-bottom: 6px;">
+            <li><strong>The AC-4 Standard:</strong> Supports 1.0 Mono, 2.0 Stereo, 5.1 Surround, 7.1.4 Immersive Beds, up to dynamic 3D objects.</li>
+            <li><strong>Your Audio File:</strong> Most broadcast and streaming AC-4 files are mastered and broadcasted as <strong>5.1 Surround presentations</strong> (6 physical channels: FL, FR, Center, LFE, Surround Left, Surround Right).</li>
+          </ul>
+          <p style="font-size: 11px; color: var(--text-secondary); line-height: 1.6;">
+            Because the file contains 6 discrete channels of audio data, selecting <strong>7.1</strong> in the player will not invent 2 non-existent rear speakers (which would be silent). The player faithfully renders the true 5.1 spatial field mixed by the sound engineer.
+          </p>
+        </div>
+
+        <!-- Section 3 -->
+        <div style="margin-bottom: 16px;">
+          <div style="font-weight: 700; color: var(--text-primary); font-size: 12.5px; margin-bottom: 6px; display: flex; align-items: center; gap: 6px;">
+            <span>📻</span> 3. What Happens When Selecting 2.0 Stereo?
+          </div>
+          <p style="font-size: 11px; color: var(--text-secondary); line-height: 1.6;">
+            For AC-4 tracks decoded by <code style="font-family: var(--font-mono); color: var(--accent-primary);">ffcodec64.dll</code>, all 6 native channels are extracted so that Center dialog and surround sound are never discarded. The visualizer places all 6 speakers in 3D space around you to give you full spatial immersion. For standard files (FLAC/WAV/MKV), selecting 2.0 downmixes the audio into stereo.
+          </p>
+        </div>
+
+        <!-- Section 4 -->
+        <div style="background: rgba(108, 122, 255, 0.08); border: 1px solid rgba(108, 122, 255, 0.2); border-radius: var(--radius-sm); padding: 12px;">
+          <div style="font-weight: 700; color: var(--text-primary); font-size: 12.5px; margin-bottom: 6px; display: flex; align-items: center; gap: 6px;">
+            <span>🛰️</span> 4. MPEG-H VVPlayer &amp; Sony 360 Reality Audio
+          </div>
+          <p style="font-size: 11px; color: var(--text-secondary); line-height: 1.6;">
+            Fraunhofer MPEG-H VVPlayer is an external player designed to decode proprietary Sony 360 RA and MPEG-H 3D audio files. Use the <strong>🎙️ Hook Live Audio</strong> button in the MPEG-H card to capture VVPlayer's audio output into SpatialAudio, bringing 3D visualization and head tracking to your MPEG-H tracks!
+          </p>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="action-btn primary small" id="btn-modal-help-close" style="padding: 7px 18px; font-size: 11px;">
+          Got it
+        </button>
+      </div>
+    </div>
+
+    <!-- 4. Sensor Inactive / Head Tracking Setup & Troubleshooting Modal -->
+    <div class="modal-dialog hidden" id="modal-sensor-help" style="max-width: 580px;">
+      <div class="modal-header">
+        <div class="modal-title">
+          <span style="font-size: 16px;">🎯</span>
+          <span>Head Tracking Sensor Setup</span>
+        </div>
+        <button class="modal-close-btn" id="modal-close-sensor-help" title="Close dialog">✕</button>
+      </div>
+      <div class="modal-body">
+        <!-- Status Alert Box -->
+        <div style="padding: 10px 14px; background: rgba(245, 158, 11, 0.1); border: 1px solid rgba(245, 158, 11, 0.25); border-radius: var(--radius-sm); margin-bottom: 16px; display: flex; align-items: center; justify-content: space-between;">
+          <div style="display: flex; align-items: center; gap: 10px;">
+            <span style="font-size: 20px;">⚠️</span>
+            <div>
+              <div style="font-size: 12.5px; font-weight: 600; color: var(--text-primary);" id="modal-sensor-status-heading">
+                Sensor Inactive (No UDP 4242 Telemetry Stream)
+              </div>
+              <div style="font-size: 11px; color: var(--text-secondary);" id="modal-sensor-status-sub">
+                SpatialAudio is listening on UDP port 4242, but no motion data packets are currently arriving from the tracker.
+              </div>
+            </div>
+          </div>
+          <span class="solo-status-badge" id="modal-sensor-badge" style="background: rgba(245, 158, 11, 0.2); color: #f59e0b; border-color: rgba(245, 158, 11, 0.4);">Inactive</span>
+        </div>
+
+        <div style="display: flex; flex-direction: column; gap: 12px; font-size: 12px; color: var(--text-secondary); line-height: 1.6;">
+          <!-- Step 1: Sony Head Tracking App Requirement -->
+          <div style="background: var(--bg-input); border: 1px solid var(--border-subtle); border-radius: var(--radius-sm); padding: 12px;">
+            <div style="display: flex; align-items: center; gap: 8px; font-weight: 600; color: var(--text-primary); margin-bottom: 6px;">
+              <span style="background: var(--accent-primary); color: #fff; width: 20px; height: 20px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; font-size: 11px;">1</span>
+              <span>Sony Head Tracking App</span>
+            </div>
+            <div>
+              SpatialAudio requires the <a href="https://github.com/NicholasSlattery/sony-head-tracker" target="_blank" style="color: var(--accent-primary); text-decoration: none; font-weight: 600;">Sony Head Tracking app (sony-head-tracker) ↗</a> to be running at all times to stream motion sensor data over <strong>UDP port 4242</strong>.
+            </div>
+            <div style="margin-top: 6px; color: var(--text-primary);">
+              👉 <strong>Action:</strong> Please make sure the Sony Head Tracking app is running.
+            </div>
+          </div>
+
+          <!-- Step 2: App is running but sensor inactive -->
+          <div style="background: var(--bg-input); border: 1px solid var(--border-subtle); border-radius: var(--radius-sm); padding: 12px;">
+            <div style="display: flex; align-items: center; gap: 8px; font-weight: 600; color: var(--text-primary); margin-bottom: 6px;">
+              <span style="background: var(--accent-primary); color: #fff; width: 20px; height: 20px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; font-size: 11px;">2</span>
+              <span>Headphones Not Detected or Sensor Frozen?</span>
+            </div>
+            <div>
+              Check inside the <strong>Sony Head Tracking app</strong> window to see if your headphones/earbuds (e.g. WF-1000XM5 / WH-1000XM5) are being detected there.
+            </div>
+            <div style="margin-top: 6px; color: var(--text-primary);">
+              👉 <strong>Action:</strong> If not detected or if the motion data has frozen, click the <strong style="color: var(--accent-cyan);">"Repair Tracker"</strong> or <strong style="color: var(--accent-cyan);">"Refresh"</strong> button inside the Sony Head Tracking app window.
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer" style="display: flex; justify-content: space-between; align-items: center;">
+        <button class="action-btn secondary small" id="btn-modal-open-bluetooth" style="padding: 7px 14px; font-size: 11px;" title="Open Windows Bluetooth Settings">
+          📶 Bluetooth Settings
+        </button>
+        <button class="action-btn primary small" id="btn-modal-sensor-close" style="padding: 7px 18px; font-size: 11px;">
+          Got it
+        </button>
+      </div>
+    </div>
   </div>
 
   <!-- Hidden file input (supports multiple selection for queue) -->

@@ -36,6 +36,18 @@ class App {
     // Solo & Axis Calibration
     this.autoCycleInterval = null;
     this.autoCycleIndex = 0;
+
+    // Headphone Profile & Virtual Look (Phases 1-3)
+    this.headphoneMode = localStorage.getItem('spatial_headphone_mode') || 'standard';
+    this.virtualHeadLook = false;
+    this.virtualYaw = 0;
+    this.virtualPitch = 0;
+    this.ambientSway = false;
+    this.ambientSwayIntensity = 0.5;
+    this._swayYawOffset = 0;
+    this._swayPitchOffset = 0;
+    this._ambientSwayRaf = null;
+    this._ambientSwayStartTime = 0;
   }
 
   init() {
@@ -72,11 +84,17 @@ class App {
     });
 
     this.visualizer.onOrientationChange((yaw, pitch, roll) => {
-      this.engine.updateListenerOrientation(yaw, pitch, roll);
+      this.virtualYaw = yaw;
+      this.virtualPitch = pitch;
+      this._applyVirtualOrientation();
     });
 
     // ─── Head Tracker ─────────────────────────────────────────────────────
     this.tracker.onUpdate((yaw, pitch, roll, pos) => {
+      if (this.headphoneMode === 'standard') {
+        // Standard mode silences physical sensor yaw/pitch/roll so sensor noise doesn't interfere
+        return;
+      }
       this.engine.updateListenerOrientation(yaw, pitch, roll);
       this.visualizer.updateHeadOrientation(yaw, pitch, roll);
       // Only set position from tracker if no automated spatial effect is running
@@ -87,9 +105,9 @@ class App {
       }
     });
 
-    this.tracker.onStatusChange((connected, info) => {
-      this.visualizer.setTrackingStatus(connected);
-      this._updateTrackingUI(connected, info);
+    this.tracker.onStatusChange((active, info, details) => {
+      this.visualizer.setTrackingStatus(this.headphoneMode === 'standard' ? true : active);
+      this._updateTrackingUI(active, info, details);
     });
 
     this.tracker.onStep((steps, x, z) => {
@@ -121,13 +139,16 @@ class App {
     const trackingStatusEl = document.getElementById('tracking-status');
     if (trackingStatusEl) {
       trackingStatusEl.addEventListener('click', () => {
-        if (!this.trackingConnected && window.desktopAPI && window.desktopAPI.openBluetoothSettings) {
-          window.desktopAPI.openBluetoothSettings();
-        } else if (this.trackingConnected) {
-          this.tracker.recenter();
-          this._showStatus('🎯 Head tracking zero-point recentered');
+        if (this.headphoneMode === 'standard') {
+          this.recenter();
+          this._showStatus('🎯 Standard audio orientation recentered to (0, 0, 0)');
+          setTimeout(() => this._showStatus('Ready'), 1500);
+        } else if (!this.trackingConnected) {
+          this._showSensorHelpModal();
         } else {
           this.tracker.recenter();
+          this._showStatus('🎯 Head tracking zero-point recentered');
+          setTimeout(() => this._showStatus('Ready'), 2000);
         }
       });
     }
@@ -234,25 +255,6 @@ class App {
         ffcodecBadge.style.color = '#ef4444';
       }
     }
-
-    const mpeghToggle = document.getElementById('toggle-engine-mpegh');
-    const mpeghBadge = document.getElementById('badge-engine-mpegh');
-    if (mpeghToggle) mpeghToggle.checked = this.engine.useMPEGH;
-    if (mpeghBadge) {
-      if (!this.engine.useMPEGH) {
-        mpeghBadge.textContent = '⚪ Disabled';
-        mpeghBadge.style.background = 'rgba(255,255,255,0.06)';
-        mpeghBadge.style.color = 'var(--text-muted)';
-      } else if (data.mpeghAvailable) {
-        mpeghBadge.textContent = '🟢 Active';
-        mpeghBadge.style.background = 'rgba(16, 185, 129, 0.15)';
-        mpeghBadge.style.color = 'var(--accent-success, #10b981)';
-      } else {
-        mpeghBadge.textContent = '⚪ Missing';
-        mpeghBadge.style.background = 'rgba(255,255,255,0.06)';
-        mpeghBadge.style.color = 'var(--text-muted)';
-      }
-    }
   }
 
   setTheme(theme) {
@@ -267,6 +269,16 @@ class App {
   // ─── File Loading ───────────────────────────────────────────────────────────
 
   async loadFile(file) {
+    const ext = (file?.name || '').toLowerCase().split('?')[0];
+    const isAC4Ext = ext.endsWith('.ac4');
+    const isCustomActive = this.engine.useCustomDecoders && this.engine.useFFCodec;
+
+    // Detect AC-4 by file extension before loading if custom decoders are not enabled
+    if (isAC4Ext && !isCustomActive) {
+      this._showFFCodecModal(file);
+      return;
+    }
+
     try {
       this._showStatus(`Loading ${file.name}...`);
       this.currentFile = file;
@@ -275,10 +287,26 @@ class App {
       // Update visualizer with speaker layout
       this.visualizer.setSpeakers(this.fileInfo.layout);
       
-      // Update UI
       this._updateFileInfo(file, this.fileInfo);
       this._renderAdvancedChannels(this.fileInfo.channelConfigs || this.engine.getChannelConfigs());
       this._showStatus('Ready');
+
+      // Update JOC Object Decoder target file display
+      const jocCurrentName = document.getElementById('joc-current-file-name');
+      const jocHint = document.getElementById('joc-file-detection-hint');
+      if (jocCurrentName) {
+        jocCurrentName.textContent = file.name;
+        const ext = (file.name || '').toLowerCase().split('.').pop();
+        if (jocHint) {
+          if (['eac3', 'ec3', 'm4a', 'mp4'].includes(ext)) {
+            jocHint.textContent = `Detected .${ext.toUpperCase()} (may contain Atmos JOC objects). Use OpenJOC or Cavernize below to extract 7.1.4.`;
+            jocHint.style.color = 'var(--accent-cyan)';
+          } else {
+            jocHint.textContent = `Loaded .${ext}. Recommended for JOC: .eac3 / .m4a with Atmos metadata.`;
+            jocHint.style.color = 'var(--text-muted)';
+          }
+        }
+      }
       
       // Ensure file is in queue
       if (this.queue.length === 0 || !this.queue.some(q => q.file === file)) {
@@ -300,6 +328,140 @@ class App {
     } catch (e) {
       this._showStatus(`Error: ${e.message}`);
       console.error('[App] Load error:', e);
+
+      // Check if file requires ffcodec64.dll
+      if (e.requiresFFCodec || e.isAC4 || (e.message && (e.message.includes('AC-4') || e.message.includes('ffcodec')))) {
+        this._showFFCodecModal(file);
+      } else if (!this.engine.useCustomDecoders || e.unsupportedFormat) {
+        // Custom decode is not on or file is unsupported without ffcodec64: show supported formats list
+        this._showSupportedFormatsModal(file.name, e.message);
+      }
+    }
+  }
+
+  // ─── Modals: ffcodec64 & Supported Formats ──────────────────────────────────
+
+  _showFFCodecModal(file) {
+    this._pendingFFCodecFile = file;
+    const overlay = document.getElementById('app-modal-overlay');
+    const promptModal = document.getElementById('modal-ffcodec-prompt');
+    const formatsModal = document.getElementById('modal-supported-formats');
+    const filenameEl = document.getElementById('modal-ffcodec-filename');
+    const statusBadge = document.getElementById('modal-ffcodec-status-badge');
+
+    if (filenameEl) filenameEl.textContent = file ? file.name : 'Dolby AC-4 Audio File';
+    if (statusBadge) {
+      const hasFFCodec = this._serverStatus?.ffcodecAvailable || this._serverStatus?.ac4Available;
+      if (hasFFCodec) {
+        statusBadge.textContent = '🟢 ffcodec64.dll Ready';
+        statusBadge.style.background = 'rgba(16, 185, 129, 0.15)';
+        statusBadge.style.color = 'var(--accent-success, #10b981)';
+      } else {
+        statusBadge.textContent = '⚠️ ffcodec64.dll Missing in tools/';
+        statusBadge.style.background = 'rgba(245, 158, 11, 0.15)';
+        statusBadge.style.color = '#f59e0b';
+      }
+    }
+
+    if (formatsModal) formatsModal.classList.add('hidden');
+    if (promptModal) promptModal.classList.remove('hidden');
+    if (overlay) overlay.classList.add('active');
+  }
+
+  _showSupportedFormatsModal(failedFileName = '', reasonMsg = '') {
+    const overlay = document.getElementById('app-modal-overlay');
+    const promptModal = document.getElementById('modal-ffcodec-prompt');
+    const formatsModal = document.getElementById('modal-supported-formats');
+    const reasonEl = document.getElementById('modal-formats-reason');
+
+    if (reasonEl) {
+      if (failedFileName) {
+        reasonEl.textContent = `The file "${failedFileName}" cannot be played by the current decoder. Standard mode is active (ffcodec64.dll is OFF). Supported native audio formats:`;
+      } else {
+        reasonEl.textContent = `Custom decoders (ffcodec64.dll) are currently OFF. Below are the audio and surround formats supported natively without external plugins:`;
+      }
+    }
+
+    if (promptModal) promptModal.classList.add('hidden');
+    if (formatsModal) formatsModal.classList.remove('hidden');
+    if (overlay) overlay.classList.add('active');
+  }
+
+  _showSpatialHelpModal() {
+    const overlay = document.getElementById('app-modal-overlay');
+    const promptModal = document.getElementById('modal-ffcodec-prompt');
+    const formatsModal = document.getElementById('modal-supported-formats');
+    const helpModal = document.getElementById('modal-spatial-help');
+
+    if (promptModal) promptModal.classList.add('hidden');
+    if (formatsModal) formatsModal.classList.add('hidden');
+    if (helpModal) helpModal.classList.remove('hidden');
+    if (overlay) overlay.classList.add('active');
+  }
+
+  async _showSensorHelpModal() {
+    const overlay = document.getElementById('app-modal-overlay');
+    this._hideModals();
+    const sensorModal = document.getElementById('modal-sensor-help');
+    if (!sensorModal || !overlay) return;
+
+    const headingEl = document.getElementById('modal-sensor-status-heading');
+    const subEl = document.getElementById('modal-sensor-status-sub');
+    const badgeEl = document.getElementById('modal-sensor-badge');
+
+    if (this.trackingConnected) {
+      if (badgeEl) {
+        badgeEl.textContent = '🟢 Active';
+        badgeEl.style.background = 'rgba(16, 185, 129, 0.15)';
+        badgeEl.style.color = 'var(--accent-success, #10b981)';
+        badgeEl.style.borderColor = 'rgba(16, 185, 129, 0.3)';
+      }
+      if (headingEl) headingEl.textContent = 'Sensor Active (Telemetry Streaming)';
+      if (subEl) subEl.textContent = `Receiving UDP 4242 motion packets (${this.tracker?.packetsPerSecond || 25}Hz). Head tracking is working properly.`;
+    } else {
+      if (badgeEl) {
+        badgeEl.textContent = '⚠️ Inactive';
+        badgeEl.style.background = 'rgba(245, 158, 11, 0.15)';
+        badgeEl.style.color = '#f59e0b';
+        badgeEl.style.borderColor = 'rgba(245, 158, 11, 0.3)';
+      }
+      if (headingEl) headingEl.textContent = 'Sensor Inactive (No UDP 4242 Telemetry Stream)';
+      if (subEl) {
+        subEl.textContent = 'SpatialAudio is listening on UDP port 4242, but no motion data packets are currently arriving from the tracker.';
+      }
+    }
+
+    sensorModal.classList.remove('hidden');
+    overlay.classList.add('active');
+  }
+
+  _hideModals() {
+    const overlay = document.getElementById('app-modal-overlay');
+    const promptModal = document.getElementById('modal-ffcodec-prompt');
+    const formatsModal = document.getElementById('modal-supported-formats');
+    const helpModal = document.getElementById('modal-spatial-help');
+    const sensorModal = document.getElementById('modal-sensor-help');
+    if (overlay) overlay.classList.remove('active');
+    if (promptModal) promptModal.classList.add('hidden');
+    if (formatsModal) formatsModal.classList.add('hidden');
+    if (helpModal) helpModal.classList.add('hidden');
+    if (sensorModal) sensorModal.classList.add('hidden');
+  }
+
+  _enableFFCodecAndPlayPending() {
+    this.engine.setCustomDecodersMaster(true);
+    this.engine.setDecoderEngineToggle('ffcodec', true);
+    this._updateMasterCustomDecodersUI();
+    this._hideModals();
+    this._showStatus('⚡ ffcodec64 enabled');
+    
+    if (this._pendingFFCodecFile) {
+      const file = this._pendingFFCodecFile;
+      this._pendingFFCodecFile = null;
+      this.loadFile(file).then(() => {
+        this.engine.play();
+        this._updatePlaybackUI(true);
+      });
     }
   }
 
@@ -332,13 +494,162 @@ class App {
   }
 
   recenter() {
-    this.tracker.recenter();
-    this.visualizer.resetListenerPosition();
+    this.virtualYaw = 0;
+    this.virtualPitch = 0;
+    this._swayYawOffset = 0;
+    this._swayPitchOffset = 0;
+    if (this.visualizer) {
+      this.visualizer.setVirtualOrientation(0, 0, 0);
+      this.visualizer.resetListenerPosition();
+    }
+    if (this.headphoneMode === 'sensor') {
+      this.tracker.recenter();
+    }
+    this.engine.updateListenerOrientation(0, 0, 0);
     this.engine.resetListenerPosition();
     this._updateHeightDisplay();
     const badge = document.getElementById('step-counter-badge');
     if (badge) badge.textContent = '👣 0 steps';
-    this._showStatus('Head tracking & position recentered');
+    this._showStatus('Head tracking & orientation recentered');
+    setTimeout(() => this._showStatus('Ready'), 1500);
+  }
+
+  // ─── Headphone Profile (Phase 1) ───────────────────────────────────────────
+
+  setHeadphoneMode(mode, showToast = true) {
+    this.headphoneMode = mode === 'sensor' ? 'sensor' : 'standard';
+    localStorage.setItem('spatial_headphone_mode', this.headphoneMode);
+
+    const isStd = this.headphoneMode === 'standard';
+    const badge = document.getElementById('headphone-mode-badge');
+    if (badge) {
+      badge.textContent = isStd ? 'Standard' : 'Motion Sensor';
+      badge.style.color = isStd ? 'var(--accent-primary)' : 'var(--accent-green, #34d399)';
+      badge.style.background = isStd ? 'rgba(56, 189, 248, 0.12)' : 'rgba(52, 211, 153, 0.12)';
+      badge.style.borderColor = isStd ? 'rgba(56, 189, 248, 0.25)' : 'rgba(52, 211, 153, 0.25)';
+    }
+
+    const btnStd = document.getElementById('btn-profile-standard');
+    const btnSensor = document.getElementById('btn-profile-sensor');
+    if (btnStd) btnStd.classList.toggle('active', isStd);
+    if (btnSensor) btnSensor.classList.toggle('active', !isStd);
+
+    const desc = document.getElementById('headphone-profile-desc');
+    if (desc) {
+      desc.textContent = isStd
+        ? 'Standard mode: Silences sensor UDP warnings. Binaural HRTF 3D spatial audio works automatically over 3.5mm, USB-C, or regular Bluetooth earphones.'
+        : 'Motion Sensor mode: Connects to OpenTrack via UDP 4242 for real-time head gyroscope orientation & 6-DoF walking.';
+    }
+
+    if (isStd) {
+      this.visualizer?.setTrackingStatus(true);
+      this.engine.updateListenerOrientation(this.virtualYaw, this.virtualPitch, 0);
+    } else {
+      this.visualizer?.setTrackingStatus(this.trackingConnected);
+    }
+
+    this._renderDeviceBadge();
+
+    if (showToast) {
+      this._showStatus(isStd
+        ? '🎧 Profile: Standard Headphones (Binaural 3D active, sensor warnings silenced)'
+        : '🛰️ Profile: Motion Sensor (Listening on UDP 4242)'
+      );
+      setTimeout(() => this._showStatus('Ready'), 2000);
+    }
+  }
+
+  // ─── Virtual Head Look (Phase 2) ───────────────────────────────────────────
+
+  setVirtualHeadLook(enabled) {
+    this.virtualHeadLook = !!enabled;
+    this.visualizer?.setVirtualHeadLookEnabled(this.virtualHeadLook);
+    const toggle = document.getElementById('virtual-look-toggle');
+    if (toggle && toggle.checked !== this.virtualHeadLook) {
+      toggle.checked = this.virtualHeadLook;
+    }
+    const badge = document.getElementById('virtual-look-badge');
+    if (badge) {
+      badge.textContent = this.virtualHeadLook ? 'ON' : 'OFF';
+      badge.style.color = this.virtualHeadLook ? 'var(--accent-primary)' : 'var(--text-muted)';
+      badge.style.background = this.virtualHeadLook ? 'rgba(56, 189, 248, 0.15)' : 'rgba(255, 255, 255, 0.06)';
+      badge.style.borderColor = this.virtualHeadLook ? 'rgba(56, 189, 248, 0.3)' : 'var(--border-subtle)';
+    }
+
+    if (!this.virtualHeadLook) {
+      // Safe fallback: immediately reset orientation
+      this.virtualYaw = 0;
+      this.virtualPitch = 0;
+      this.visualizer?.setVirtualOrientation(0, 0, 0);
+      this._applyVirtualOrientation();
+      this._showStatus('Virtual Head Look: OFF · Reset to center');
+    } else {
+      this._showStatus('Virtual Head Look: ON (Right-Click/Alt+Drag or ←/→ keys)');
+    }
+    setTimeout(() => this._showStatus('Ready'), 1500);
+  }
+
+  _applyVirtualOrientation() {
+    let y = this.virtualYaw;
+    let p = this.virtualPitch;
+    if (this.ambientSway) {
+      y += this._swayYawOffset || 0;
+      p += this._swayPitchOffset || 0;
+    }
+    this.engine.updateListenerOrientation(y, p, 0);
+    if (this.visualizer) {
+      this.visualizer.yaw = y;
+      this.visualizer.pitch = p;
+    }
+  }
+
+  // ─── Ambient Micro-Sway Anti-Fatigue (Phase 3) ─────────────────────────────
+
+  setAmbientSway(enabled, intensity = 0.5) {
+    this.ambientSway = !!enabled;
+    this.ambientSwayIntensity = intensity;
+
+    const toggle = document.getElementById('micro-sway-toggle');
+    if (toggle && toggle.checked !== this.ambientSway) {
+      toggle.checked = this.ambientSway;
+    }
+    const badge = document.getElementById('micro-sway-badge');
+    if (badge) {
+      badge.textContent = this.ambientSway ? 'ON' : 'OFF';
+      badge.style.color = this.ambientSway ? 'var(--accent-primary)' : 'var(--text-muted)';
+      badge.style.background = this.ambientSway ? 'rgba(56, 189, 248, 0.15)' : 'rgba(255, 255, 255, 0.06)';
+      badge.style.borderColor = this.ambientSway ? 'rgba(56, 189, 248, 0.3)' : 'var(--border-subtle)';
+    }
+    const sliderContainer = document.getElementById('micro-sway-slider-container');
+    if (sliderContainer) {
+      sliderContainer.style.opacity = this.ambientSway ? '1' : '0.5';
+      sliderContainer.style.pointerEvents = this.ambientSway ? 'auto' : 'none';
+    }
+
+    if (this.ambientSway) {
+      if (!this._ambientSwayRaf) {
+        this._ambientSwayStartTime = performance.now();
+        const swayTick = () => {
+          if (!this.ambientSway) return;
+          const t = (performance.now() - this._ambientSwayStartTime) * 0.001;
+          this._swayYawOffset = Math.sin(t * 0.75) * (2.5 * this.ambientSwayIntensity);
+          this._swayPitchOffset = Math.cos(t * 0.50) * (1.0 * this.ambientSwayIntensity);
+          this._applyVirtualOrientation();
+          this._ambientSwayRaf = requestAnimationFrame(swayTick);
+        };
+        this._ambientSwayRaf = requestAnimationFrame(swayTick);
+      }
+      this._showStatus('🌊 Ambient Micro-Sway active (Anti-fatigue drift)');
+    } else {
+      if (this._ambientSwayRaf) {
+        cancelAnimationFrame(this._ambientSwayRaf);
+        this._ambientSwayRaf = null;
+      }
+      this._swayYawOffset = 0;
+      this._swayPitchOffset = 0;
+      this._applyVirtualOrientation();
+      this._showStatus('Ambient Micro-Sway stopped');
+    }
     setTimeout(() => this._showStatus('Ready'), 1500);
   }
 
@@ -405,6 +716,13 @@ class App {
     const icon = btn.querySelector('.btn-icon');
     icon.textContent = playing ? '⏸' : '▶';
     btn.setAttribute('aria-label', playing ? 'Pause' : 'Play');
+
+    // Also sync JOC mini player play/pause button if present
+    const jocPlayBtn = document.getElementById('btn-joc-play-pause');
+    if (jocPlayBtn) {
+      jocPlayBtn.textContent = playing ? '⏸' : '▶';
+      jocPlayBtn.title = playing ? 'Pause' : 'Play';
+    }
   }
 
   _updateSeekBar(time) {
@@ -418,6 +736,16 @@ class App {
     }
     
     document.getElementById('time-current').textContent = this._formatTime(time);
+
+    // Also sync JOC mini player seek bar and time readout
+    const jocSeekBar = document.getElementById('joc-seek-bar');
+    const jocTime = document.getElementById('joc-now-playing-time');
+    if (jocSeekBar && document.activeElement !== jocSeekBar) {
+      jocSeekBar.value = Math.round(fraction * 1000);
+    }
+    if (jocTime) {
+      jocTime.textContent = `${this._formatTime(time)} / ${this._formatTime(this.engine.duration)}`;
+    }
   }
 
   _updateDeviceStatusUI(deviceStatus) {
@@ -425,8 +753,9 @@ class App {
     this._renderDeviceBadge();
   }
 
-  _updateTrackingUI(connected, info) {
-    this.trackingConnected = connected;
+  _updateTrackingUI(active, info, details) {
+    this.trackingConnected = !!active;
+    this.trackingDetails = details || null;
     this._renderDeviceBadge();
   }
 
@@ -436,29 +765,33 @@ class App {
     const container = document.getElementById('tracking-status');
     if (!dot || !text || !container) return;
 
+    if (this.headphoneMode === 'standard') {
+      dot.className = 'tracking-dot standard';
+      text.textContent = '🎧 Standard Audio (Binaural 3D Active)';
+      container.title = 'Standard / Wired headphones profile: Full HRTF 3D binaural audio active. Click to center orientation.';
+      return;
+    }
+
+    let devName = this.deviceStatus?.deviceName;
+    if (!devName) {
+      devName = (this.deviceStatus?.deviceCategory === 'none') ? null : 'Audio Output';
+    }
+
     if (this.trackingConnected) {
       dot.className = 'tracking-dot connected';
-      const devName = this.deviceStatus?.deviceName || 'Headset';
       text.textContent = `🎯 ${devName} (Sensor Active)`;
-      container.title = 'Head-tracking motion sensor active (25Hz). Click to recenter zero-point.';
-    } else if (this.deviceStatus?.deviceCategory === 'sensor') {
-      dot.className = 'tracking-dot standard';
-      const devName = this.deviceStatus.deviceName || 'Compatible Headset';
-      text.textContent = `🎧 ${devName} (Connecting Sensor...)`;
-      container.title = 'Compatible sensor headset detected. Initializing motion telemetry...';
-    } else if (this.deviceStatus?.deviceCategory === 'standard') {
-      dot.className = 'tracking-dot standard';
-      const devName = this.deviceStatus.deviceName || 'Standard Audio';
-      text.textContent = `🎧 ${devName} (Standard Audio)`;
-      container.title = 'Standard audio device (No motion sensor). Spatial audio is active — use mouse or WASD to orbit.';
-    } else if (this.deviceStatus?.deviceCategory === 'none') {
-      dot.className = 'tracking-dot disconnected';
-      text.textContent = '⚠️ No Headset • Pair in Bluetooth';
-      container.title = 'No Bluetooth headset connected. Click to open Windows Bluetooth Settings.';
+      const pps = this.tracker?.packetsPerSecond || 25;
+      container.title = `Head-tracking motion sensor active (${pps}Hz). Click to recenter zero-point.`;
     } else {
-      dot.className = 'tracking-dot disconnected';
-      text.textContent = 'Head Tracking Off';
-      container.title = 'Head tracking inactive. Click to open Bluetooth settings.';
+      dot.className = 'tracking-dot inactive';
+      if (this.deviceStatus?.deviceCategory === 'none') {
+        dot.className = 'tracking-dot disconnected';
+        text.textContent = '⚠️ No Headset • Pair in Bluetooth';
+        container.title = 'No Bluetooth headset connected. Click for setup & troubleshooting.';
+      } else {
+        text.textContent = `⚠️ ${devName} (Sensor Inactive)`;
+        container.title = 'No head-tracking data detected on UDP 4242. Click for setup & troubleshooting.';
+      }
     }
   }
 
@@ -715,7 +1048,7 @@ class App {
     this.tourProgress = 0;
     this.tourHoverTimer = 0;
 
-    document.querySelectorAll('.effect-btn').forEach(btn => {
+    document.querySelectorAll('.effect-btn, .quick-effect-btn').forEach(btn => {
       btn.classList.toggle('active', btn.dataset.effect === effectName);
     });
 
@@ -760,7 +1093,7 @@ class App {
 
   stopEffect(resetCenter = true) {
     this.activeEffect = null;
-    document.querySelectorAll('.effect-btn').forEach(btn => btn.classList.remove('active'));
+    document.querySelectorAll('.effect-btn, .quick-effect-btn').forEach(btn => btn.classList.remove('active'));
     if (this.visualizer) {
       this.visualizer.setActiveEffect(null);
     }
@@ -1248,9 +1581,32 @@ class App {
       });
     });
 
+    // Quick Spatial Effect buttons on Player Panel (Phase 3)
+    document.querySelectorAll('.quick-effect-btn[data-effect]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        this.setEffect(btn.dataset.effect);
+      });
+    });
+    document.getElementById('btn-quick-effect-stop')?.addEventListener('click', () => {
+      this.stopEffect(true);
+    });
+
     // Stop Effect Button
     document.getElementById('btn-effect-stop')?.addEventListener('click', () => {
       this.stopEffect(true);
+    });
+
+    // Ambient Micro-Sway Anti-Fatigue (Phase 3)
+    const microSwayToggle = document.getElementById('micro-sway-toggle');
+    const microSwaySlider = document.getElementById('micro-sway-slider');
+    const microSwaySliderVal = document.getElementById('micro-sway-intensity-val');
+    microSwayToggle?.addEventListener('change', (e) => {
+      this.setAmbientSway(e.target.checked, this.ambientSwayIntensity);
+    });
+    microSwaySlider?.addEventListener('input', (e) => {
+      const val = parseInt(e.target.value, 10);
+      this.ambientSwayIntensity = val / 100;
+      if (microSwaySliderVal) microSwaySliderVal.textContent = `${val}%`;
     });
 
     // Effect Pace Slider
@@ -1464,6 +1820,17 @@ class App {
       setTimeout(() => this._showStatus('Ready'), 1800);
     });
 
+    // ── Credits & Open Source Collapsible Header Toggle ───
+    const creditsCollapseToggle = document.getElementById('credits-collapse-toggle');
+    const creditsCollapseIcon = document.getElementById('credits-collapse-icon');
+    const creditsCollapseContent = document.getElementById('credits-collapse-content');
+    creditsCollapseToggle?.addEventListener('click', () => {
+      const isHidden = creditsCollapseContent?.classList.toggle('hidden');
+      if (creditsCollapseIcon) {
+        creditsCollapseIcon.style.transform = isHidden ? 'rotate(-90deg)' : 'rotate(0deg)';
+      }
+    });
+
     // ── Custom Decoders Collapsible Header Toggle ───
     const decodersCollapseToggle = document.getElementById('custom-decoders-collapse-toggle');
     const decodersCollapseIcon = document.getElementById('custom-decoders-collapse-icon');
@@ -1484,42 +1851,124 @@ class App {
       setTimeout(() => this._showStatus('Ready'), 1500);
     });
 
-    // ── Spatial Audio Decoders (Dolby AC-4 Atmos & 360 RA & MPEG-H 3D) ───
+    // ── Modal Actions: Spatial Layout & Dolby AC-4 Guide Modal ───
+    document.getElementById('btn-footer-help')?.addEventListener('click', () => {
+      this._showSpatialHelpModal();
+    });
+
+    document.getElementById('modal-close-help')?.addEventListener('click', () => {
+      this._hideModals();
+    });
+
+    document.getElementById('btn-modal-help-close')?.addEventListener('click', () => {
+      this._hideModals();
+    });
+
+    // ── ffcodec64 Plugin Toggle ───
     document.getElementById('toggle-engine-ffcodec')?.addEventListener('change', (e) => {
       this.engine.setDecoderEngineToggle('ffcodec', e.target.checked);
       this._updateDecoderEngineBadges();
-      this._showStatus(`Dolby AC-4 Atmos: ${e.target.checked ? 'Enabled' : 'Disabled'}`);
+      this._showStatus(`ffcodec64: ${e.target.checked ? 'Enabled' : 'Disabled'}`);
       setTimeout(() => this._showStatus('Ready'), 1500);
     });
 
-    document.getElementById('toggle-engine-mpegh')?.addEventListener('change', (e) => {
-      this.engine.setDecoderEngineToggle('mpegh', e.target.checked);
-      this._updateDecoderEngineBadges();
-      this._showStatus(`360 RA & MPEG-H 3D: ${e.target.checked ? 'Enabled' : 'Disabled'}`);
-      setTimeout(() => this._showStatus('Ready'), 1500);
+    // ── View Supported Formats Button ───
+    document.getElementById('btn-view-supported-formats')?.addEventListener('click', () => {
+      this._showSupportedFormatsModal();
     });
 
-    document.getElementById('btn-launch-vvplayer')?.addEventListener('click', async () => {
-      try {
-        this._showStatus('Launching 360 RA & MPEG-H 3D Player...');
-        const res = await fetch('/api/open-mpegh-player', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({})
-        });
-        const data = await res.json();
-        if (res.ok) {
-          this._showStatus('🚀 360 RA & MPEG-H 3D Player launched');
-        } else {
-          this._showStatus(`⚠️ ${data.error || 'Failed to launch player'}`);
-        }
-      } catch (err) {
-        this._showStatus(`⚠️ ${err.message}`);
+    // ── Modal Actions: ffcodec64 Prompt ───
+    document.getElementById('modal-close-ffcodec')?.addEventListener('click', () => {
+      this._hideModals();
+    });
+
+    document.getElementById('btn-modal-ffcodec-cancel')?.addEventListener('click', () => {
+      const pendingName = this._pendingFFCodecFile?.name || '';
+      this._showSupportedFormatsModal(pendingName);
+    });
+
+    document.getElementById('btn-modal-ffcodec-formats')?.addEventListener('click', () => {
+      const pendingName = this._pendingFFCodecFile?.name || '';
+      this._showSupportedFormatsModal(pendingName);
+    });
+
+    document.getElementById('btn-modal-ffcodec-enable')?.addEventListener('click', () => {
+      this._enableFFCodecAndPlayPending();
+    });
+
+    // ── Modal Actions: Supported Formats Dialog ───
+    document.getElementById('modal-close-formats')?.addEventListener('click', () => {
+      this._hideModals();
+    });
+
+    document.getElementById('btn-modal-formats-close')?.addEventListener('click', () => {
+      this._hideModals();
+    });
+
+    document.getElementById('btn-modal-formats-enable-ffcodec')?.addEventListener('click', () => {
+      this._enableFFCodecAndPlayPending();
+    });
+
+    // ── Modal Actions: Sensor Setup & Troubleshooting ───
+    document.getElementById('modal-close-sensor-help')?.addEventListener('click', () => {
+      this._hideModals();
+    });
+
+    document.getElementById('btn-modal-sensor-close')?.addEventListener('click', () => {
+      this._hideModals();
+    });
+
+    document.getElementById('btn-modal-open-bluetooth')?.addEventListener('click', () => {
+      if (window.desktopAPI?.openBluetoothSettings) {
+        window.desktopAPI.openBluetoothSettings();
+      } else {
+        this._showStatus('Open Windows Settings → Bluetooth & Devices to pair your headphones');
       }
-      setTimeout(() => this._showStatus('Ready'), 2000);
+    });
+
+
+
+    // Click outside modal dialog to close
+    document.getElementById('app-modal-overlay')?.addEventListener('click', (e) => {
+      if (e.target.id === 'app-modal-overlay') {
+        this._hideModals();
+      }
     });
 
     // ─── Fraunhofer MPEG-H VV Live Audio Stream Integration ─────────────────
+    const mpeghFeatureToggle = document.getElementById('toggle-mpegh-feature');
+    const mpeghBadge = document.getElementById('badge-mpegh-toggle');
+    const mpeghContent = document.getElementById('mpegh-content-container');
+
+    const updateMpeghFeatureUI = (enabled) => {
+      if (mpeghFeatureToggle) mpeghFeatureToggle.checked = enabled;
+      if (mpeghContent) mpeghContent.classList.toggle('hidden', !enabled);
+      if (mpeghBadge) {
+        mpeghBadge.textContent = enabled ? '🟢 On' : 'Off';
+        mpeghBadge.style.background = enabled ? 'rgba(16, 185, 129, 0.15)' : 'rgba(255,255,255,0.06)';
+        mpeghBadge.style.color = enabled ? 'var(--accent-success, #10b981)' : 'var(--text-muted)';
+        mpeghBadge.style.borderColor = enabled ? 'rgba(16, 185, 129, 0.3)' : 'rgba(255,255,255,0.1)';
+      }
+    };
+
+    // Load persisted state (default: false / off)
+    const savedMpeghState = localStorage.getItem('spatial_mpegh_feature_enabled') === 'true';
+    updateMpeghFeatureUI(savedMpeghState);
+
+    mpeghFeatureToggle?.addEventListener('change', (e) => {
+      const enabled = e.target.checked;
+      localStorage.setItem('spatial_mpegh_feature_enabled', enabled ? 'true' : 'false');
+      updateMpeghFeatureUI(enabled);
+      if (!enabled && this.engine.isLiveStream) {
+        this.engine.disconnectLiveStream();
+        const streamingBar = document.getElementById('mpegh-vv-streaming-bar');
+        if (streamingBar) streamingBar.style.display = 'none';
+        this._updatePlayButton(false);
+      }
+      this._showStatus(`MPEG-H VV Live Stream: ${enabled ? 'Enabled' : 'Disabled'}`);
+      setTimeout(() => this._showStatus('Ready'), 1500);
+    });
+
     const checkMpeghStatus = async () => {
       const badge = document.getElementById('mpegh-vv-status-badge');
       if (!badge) return;
@@ -1546,11 +1995,11 @@ class App {
         if (res.success) {
           this._showStatus('🚀 Fraunhofer MPEG-H VVPlayer launched');
         } else {
-          this._showStatus(`⚠️ ${res.error || 'Launch failed'}`);
+          this._showStatus(`⚠️ ${res.error || 'Failed to launch'}`);
         }
       } else {
         try {
-          const res = await fetch('/api/open-mpegh-player', {
+          const res = await fetch('/api/open-mpegh-vv', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ filePath: this.currentFile?.path || null })
@@ -1569,55 +2018,24 @@ class App {
       const streamingBar = document.getElementById('mpegh-vv-streaming-bar');
       try {
         this._showStatus('Hooking audio stream from MPEG-H VVPlayer...');
-        let stream = null;
         
-        // 1. Try desktopCapturer sources if in desktop mode
-        if (window.desktopAPI?.getMpeghSources) {
-          const sources = await window.desktopAPI.getMpeghSources();
-          const mpegh = sources.find(s => s.isMpegh);
-          const chosen = mpegh || sources[0];
-          
-          if (chosen) {
-            try {
-              stream = await navigator.mediaDevices.getUserMedia({
-                audio: {
-                  mandatory: {
-                    chromeMediaSource: 'desktop',
-                    chromeMediaSourceId: chosen.id
-                  }
-                },
-                video: {
-                  mandatory: {
-                    chromeMediaSource: 'desktop',
-                    chromeMediaSourceId: chosen.id,
-                    maxWidth: 2,
-                    maxHeight: 2
-                  }
-                }
-              });
-            } catch (err) {
-              console.warn('[App] Direct desktop media source error, falling back to display media:', err);
-            }
-          }
-        }
-        
-        // 2. Fallback to getDisplayMedia with audio
-        if (!stream) {
-          stream = await navigator.mediaDevices.getDisplayMedia({
-            video: true,
-            audio: true
-          });
-        }
+        // In desktop mode, setDisplayMediaRequestHandler provides screen loopback with audio automatically
+        const stream = await navigator.mediaDevices.getDisplayMedia({
+          video: true,
+          audio: true
+        });
         
         if (stream && stream.getAudioTracks().length > 0) {
           stream.getVideoTracks().forEach(t => t.stop());
           
           // Connect stream into AudioEngine
-          this.engine.connectLiveMediaStream(stream, 'stereo');
+          await this.engine.connectLiveMediaStream(stream, 'stereo');
+          this.visualizer.setSpeakers(this.engine.layout);
+          this._renderAdvancedChannels(this.engine.getChannelConfigs());
           
           if (streamingBar) streamingBar.style.display = 'flex';
           this._updatePlayButton(true);
-          this._showStatus('🟢 Streaming Live Audio from MPEG-H VVPlayer');
+          this._showStatus('🟢 Streaming Live Audio from MPEG-H VVPlayer (Head-Tracked)');
           
           stream.getAudioTracks()[0].onended = () => {
             this.engine.disconnectLiveStream();
@@ -1637,6 +2055,14 @@ class App {
       }
     });
 
+    document.getElementById('btn-toggle-mpegh-mute')?.addEventListener('click', (e) => {
+      const isMuted = !this.engine.liveMonitorMuted;
+      this.engine.setLiveMonitorMuted(isMuted);
+      e.target.textContent = isMuted ? '🔊 Unmute Output (Echo)' : '🔇 Mute Output (No Echo)';
+      this._showStatus(isMuted ? 'Live loopback monitor muted (Visualizer only)' : 'Live loopback monitor unmuted');
+      setTimeout(() => this._showStatus('Ready'), 2000);
+    });
+
     document.getElementById('btn-disconnect-mpegh-audio')?.addEventListener('click', () => {
       this.engine.disconnectLiveStream();
       const streamingBar = document.getElementById('mpegh-vv-streaming-bar');
@@ -1645,6 +2071,368 @@ class App {
       this._showStatus('MPEG-H VV stream disconnected');
       setTimeout(() => this._showStatus('Ready'), 2000);
     });
+
+    // ─── JOC Dolby Atmos Object Decoder Pre-Processor (Isolated) ───────────
+    const jocFeatureToggle = document.getElementById('toggle-joc-feature');
+    const jocBadge = document.getElementById('badge-joc-toggle');
+    const jocContent = document.getElementById('joc-content-container');
+    const jocFileNameEl = document.getElementById('joc-current-file-name');
+    const jocFileHintEl = document.getElementById('joc-file-detection-hint');
+    const jocLogEl = document.getElementById('joc-console-log');
+    const btnJocOpenJOC = document.getElementById('btn-joc-decode-openjoc');
+    const btnJocCavernize = document.getElementById('btn-joc-decode-cavernize');
+    const btnJocCancel = document.getElementById('btn-joc-cancel');
+    const btnJocLoadResult = document.getElementById('btn-joc-load-result');
+    const btnJocRestore = document.getElementById('btn-joc-restore-original');
+    const btnJocBrowse = document.getElementById('btn-joc-browse-file');
+    const btnJocClearLog = document.getElementById('btn-joc-clear-log');
+    const btnJocOpenTools = document.getElementById('btn-joc-open-tools');
+    const jocLayoutSelect = document.getElementById('joc-target-layout-select');
+
+    // Progress Bar Elements
+    const jocProgressWrapper = document.getElementById('joc-progress-wrapper');
+    const jocProgressBar = document.getElementById('joc-progress-bar');
+    const jocProgressPercent = document.getElementById('joc-progress-percent');
+    const jocProgressLabel = document.getElementById('joc-progress-label');
+    const jocProgressStatus = document.getElementById('joc-progress-status');
+    const jocProgressElapsed = document.getElementById('joc-progress-elapsed');
+
+    // Mini Player Controls Elements
+    const jocPlayerControls = document.getElementById('joc-player-controls');
+    const btnJocPlayPause = document.getElementById('btn-joc-play-pause');
+    const btnJocStop = document.getElementById('btn-joc-stop');
+    const btnJocPrev = document.getElementById('btn-joc-prev');
+    const btnJocNext = document.getElementById('btn-joc-next');
+    const jocSeekBar = document.getElementById('joc-seek-bar');
+
+    // Collapsible Log Elements
+    const jocLogToggle = document.getElementById('joc-log-toggle');
+    const jocLogCollapsible = document.getElementById('joc-log-collapsible');
+    const jocLogToggleIcon = document.getElementById('joc-log-toggle-icon');
+
+    this.jocSelectedFilePath = null;
+    this.jocDecodedResult = null;
+    this._jocOriginalFile = null;
+
+    let progressTimer = null;
+    let progressStartTime = 0;
+    let simulatedPercent = 0;
+
+    const startProgress = (engineName) => {
+      if (jocProgressWrapper) jocProgressWrapper.classList.remove('hidden');
+      if (jocProgressBar) {
+        jocProgressBar.style.width = '8%';
+        jocProgressBar.classList.add('animated-shimmer');
+      }
+      if (jocProgressPercent) jocProgressPercent.textContent = '8%';
+      if (jocProgressLabel) jocProgressLabel.textContent = `Extracting Atmos objects via ${engineName}...`;
+      if (jocProgressStatus) jocProgressStatus.textContent = 'Decoding OAMD metadata & spatial objects...';
+      
+      progressStartTime = Date.now();
+      simulatedPercent = 8;
+      if (progressTimer) clearInterval(progressTimer);
+      
+      progressTimer = setInterval(() => {
+        const elapsedSec = ((Date.now() - progressStartTime) / 1000).toFixed(1);
+        if (jocProgressElapsed) jocProgressElapsed.textContent = `${elapsedSec}s`;
+        
+        // Progress smoothly towards 92% while waiting for binary to finish writing WAV
+        if (simulatedPercent < 90) {
+          simulatedPercent += Math.max(0.4, (90 - simulatedPercent) * 0.06);
+          const rounded = Math.round(simulatedPercent);
+          if (jocProgressBar) jocProgressBar.style.width = `${rounded}%`;
+          if (jocProgressPercent) jocProgressPercent.textContent = `${rounded}%`;
+        }
+      }, 200);
+    };
+
+    const finishProgress = (success, message) => {
+      if (progressTimer) clearInterval(progressTimer);
+      progressTimer = null;
+      const elapsedSec = ((Date.now() - (progressStartTime || Date.now())) / 1000).toFixed(1);
+      if (jocProgressElapsed) jocProgressElapsed.textContent = `${elapsedSec}s`;
+      
+      if (jocProgressBar) {
+        jocProgressBar.classList.remove('animated-shimmer');
+        jocProgressBar.style.width = success ? '100%' : '0%';
+      }
+      if (jocProgressPercent) jocProgressPercent.textContent = success ? '100%' : 'Failed';
+      if (jocProgressLabel) jocProgressLabel.textContent = success ? '✅ Discrete 7.1.4 Output Ready' : '❌ Extraction Failed';
+      if (jocProgressStatus) jocProgressStatus.textContent = message || (success ? `Finished in ${elapsedSec}s` : 'Error occurred');
+    };
+
+    const appendJocLog = (msg) => {
+      if (!jocLogEl) return;
+      if (jocLogEl.textContent === 'Standby. Select a decoder above to begin extraction.') {
+        jocLogEl.textContent = '';
+      }
+      jocLogEl.textContent += (jocLogEl.textContent ? '\n' : '') + msg;
+      jocLogEl.scrollTop = jocLogEl.scrollHeight;
+    };
+
+    if (window.desktopAPI?.onJocLog) {
+      window.desktopAPI.onJocLog((msg) => {
+        appendJocLog(msg);
+      });
+    }
+
+    // Toggle Log collapsible
+    jocLogToggle?.addEventListener('click', () => {
+      if (!jocLogCollapsible) return;
+      const isHidden = jocLogCollapsible.classList.toggle('hidden');
+      if (jocLogToggleIcon) jocLogToggleIcon.textContent = isHidden ? '▼' : '▲';
+    });
+
+    const updateJocFeatureUI = (enabled) => {
+      if (jocFeatureToggle) jocFeatureToggle.checked = enabled;
+      if (jocContent) jocContent.classList.toggle('hidden', !enabled);
+      if (jocBadge) {
+        jocBadge.textContent = enabled ? '🟢 Ready' : 'Off';
+        jocBadge.style.background = enabled ? 'rgba(16, 185, 129, 0.15)' : 'rgba(255,255,255,0.06)';
+        jocBadge.style.color = enabled ? 'var(--accent-success, #10b981)' : 'var(--text-muted)';
+        jocBadge.style.borderColor = enabled ? 'rgba(16, 185, 129, 0.3)' : 'rgba(255,255,255,0.1)';
+      }
+    };
+
+    const savedJocState = localStorage.getItem('spatial_joc_feature_enabled') === 'true';
+    updateJocFeatureUI(savedJocState);
+
+    jocFeatureToggle?.addEventListener('change', (e) => {
+      const enabled = e.target.checked;
+      localStorage.setItem('spatial_joc_feature_enabled', enabled ? 'true' : 'false');
+      updateJocFeatureUI(enabled);
+      this._showStatus(`JOC Object Decoder: ${enabled ? 'Enabled' : 'Disabled'}`);
+      setTimeout(() => this._showStatus('Ready'), 1500);
+    });
+
+    const checkJocStatus = async () => {
+      const statusOpenJoc = document.getElementById('joc-status-openjoc');
+      const statusCavernize = document.getElementById('joc-status-cavernize');
+      if (window.desktopAPI?.jocGetStatus) {
+        try {
+          const stat = await window.desktopAPI.jocGetStatus();
+          if (statusOpenJoc) {
+            statusOpenJoc.textContent = stat.openjoc?.available ? '🟢 Available (Rust)' : '⚪ Not Found';
+            statusOpenJoc.style.color = stat.openjoc?.available ? 'var(--accent-success)' : 'var(--text-muted)';
+          }
+          if (statusCavernize) {
+            statusCavernize.textContent = stat.cavernize?.available ? '🟢 Available (.NET)' : '⚪ Not Found';
+            statusCavernize.style.color = stat.cavernize?.available ? 'var(--accent-success)' : 'var(--text-muted)';
+          }
+        } catch (_) {}
+      } else {
+        if (statusOpenJoc) statusOpenJoc.textContent = 'Desktop App Required';
+        if (statusCavernize) statusCavernize.textContent = 'Desktop App Required';
+      }
+    };
+    checkJocStatus();
+    setInterval(checkJocStatus, 5000);
+
+    btnJocClearLog?.addEventListener('click', () => {
+      if (jocLogEl) jocLogEl.textContent = 'Standby. Select a decoder above to begin extraction.';
+    });
+
+    btnJocOpenTools?.addEventListener('click', () => {
+      if (window.desktopAPI?.openToolsFolder) {
+        window.desktopAPI.openToolsFolder();
+      } else {
+        this._showStatus('Place openjoc.exe or Cavernize.exe into the tools/ directory');
+      }
+    });
+
+    btnJocBrowse?.addEventListener('click', async () => {
+      if (window.desktopAPI?.jocSelectFile) {
+        const filePath = await window.desktopAPI.jocSelectFile();
+        if (filePath) {
+          this.jocSelectedFilePath = filePath;
+          if (jocFileNameEl) jocFileNameEl.textContent = filePath.split(/[\\/]/).pop();
+          if (jocFileHintEl) {
+            const ext = filePath.toLowerCase().split('.').pop();
+            const isEAC3 = ['eac3', 'ec3', 'm4a', 'mp4', 'mkv'].includes(ext);
+            jocFileHintEl.textContent = isEAC3
+              ? `Ready to extract Atmos objects from ${ext.toUpperCase()} container.`
+              : `Selected file: .${ext}. Recommended: .eac3 / .m4a JOC streams.`;
+            jocFileHintEl.style.color = isEAC3 ? 'var(--accent-cyan)' : 'var(--text-muted)';
+          }
+          appendJocLog(`📁 Selected file: ${filePath}`);
+        }
+      } else {
+        this._showStatus('Browse is available in the desktop application');
+      }
+    });
+
+    const runJocDecoder = async (engine) => {
+      const targetPath = this.jocSelectedFilePath || this.currentFile?.path || null;
+      if (!targetPath) {
+        appendJocLog('⚠️ No file path available. Please click "Browse File..." to select an audio file from your hard drive.');
+        this._showStatus('⚠️ Please select a file via Browse File first');
+        return;
+      }
+
+      if (!window.desktopAPI?.jocDecodeOpenJOC) {
+        appendJocLog('⚠️ JOC decoders require running the SpatialAudio Electron desktop app.');
+        return;
+      }
+
+      const layout = jocLayoutSelect?.value || '7.1.4';
+      const section = document.getElementById('joc-decoder-section');
+      section?.classList.add('decoding');
+      if (btnJocOpenJOC) btnJocOpenJOC.disabled = true;
+      if (btnJocCavernize) btnJocCavernize.disabled = true;
+      if (btnJocCancel) btnJocCancel.disabled = false;
+      if (btnJocLoadResult) btnJocLoadResult.disabled = true;
+      if (jocBadge) {
+        jocBadge.textContent = '⏳ Decoding...';
+        jocBadge.style.color = '#f59e0b';
+      }
+      this._showStatus(`Extracting Atmos objects via ${engine}...`);
+      startProgress(engine);
+
+      try {
+        let result;
+        if (engine === 'OpenJOC') {
+          result = await window.desktopAPI.jocDecodeOpenJOC(targetPath, layout);
+        } else {
+          result = await window.desktopAPI.jocDecodeCavernize(targetPath, layout);
+        }
+
+        if (result && result.success) {
+          this.jocDecodedResult = result;
+          finishProgress(true, `Decoded ${(result.sizeBytes / (1024 * 1024)).toFixed(2)} MB 7.1.4 WAV`);
+          if (btnJocLoadResult) btnJocLoadResult.disabled = false;
+          if (jocBadge) {
+            jocBadge.textContent = '✅ Decoded';
+            jocBadge.style.color = 'var(--accent-success)';
+          }
+          this._showStatus(`✅ ${engine} decoded successfully! Click "Load Decoded Result"`);
+        } else {
+          const err = result?.error || 'Unknown decode error';
+          finishProgress(false, err);
+          appendJocLog(`❌ Error: ${err}`);
+          this._showStatus(`⚠️ ${engine} failed: ${err}`);
+          if (jocBadge) {
+            jocBadge.textContent = '❌ Failed';
+            jocBadge.style.color = '#f43f5e';
+          }
+        }
+      } catch (err) {
+        finishProgress(false, err.message);
+        appendJocLog(`❌ Exception: ${err.message}`);
+        this._showStatus(`⚠️ Decoder error: ${err.message}`);
+        if (jocBadge) {
+          jocBadge.textContent = '❌ Error';
+          jocBadge.style.color = '#f43f5e';
+        }
+      } finally {
+        section?.classList.remove('decoding');
+        if (btnJocOpenJOC) btnJocOpenJOC.disabled = false;
+        if (btnJocCavernize) btnJocCavernize.disabled = false;
+        if (btnJocCancel) btnJocCancel.disabled = true;
+      }
+    };
+
+    btnJocOpenJOC?.addEventListener('click', () => runJocDecoder('OpenJOC'));
+    btnJocCavernize?.addEventListener('click', () => runJocDecoder('Cavernize'));
+
+    btnJocCancel?.addEventListener('click', () => {
+      if (window.desktopAPI?.jocCancel) {
+        window.desktopAPI.jocCancel();
+        finishProgress(false, 'Cancelled by user');
+        appendJocLog('⚠️ Cancel request sent.');
+        this._showStatus('JOC decode cancelled');
+      }
+    });
+
+    btnJocLoadResult?.addEventListener('click', async () => {
+      if (!this.jocDecodedResult?.outputFile) {
+        this._showStatus('⚠️ No decoded result ready to load');
+        return;
+      }
+
+      try {
+        this._showStatus('Loading decoded 7.1.4 Atmos PCM result...');
+        const res = await window.desktopAPI.jocReadFile(this.jocDecodedResult.outputFile);
+        if (!res || !res.success || !res.data) {
+          throw new Error(res?.error || 'Could not read decoded file data');
+        }
+
+        const uint8 = new Uint8Array(res.data);
+        const blob = new Blob([uint8], { type: 'audio/wav' });
+        const wavFile = new File([blob], this.jocDecodedResult.filename || 'atmos_7.1.4_decoded.wav', { type: 'audio/wav' });
+
+        // Save original file for restore
+        this._jocOriginalFile = this.currentFile;
+
+        await this.loadFile(wavFile);
+        if (btnJocRestore) btnJocRestore.disabled = false;
+        if (jocPlayerControls) jocPlayerControls.classList.remove('hidden');
+        
+        // Auto-play the loaded 7.1.4 result!
+        this.engine.play();
+        this._updatePlaybackUI(true);
+
+        this._showStatus('▶️ Loaded and playing 7.1.4 Atmos discrete PCM output!');
+        appendJocLog(`▶️ Loaded into player: ${wavFile.name} (7.1.4 Discrete)`);
+      } catch (err) {
+        console.error('[App] Load JOC result failed:', err);
+        this._showStatus(`⚠️ Failed to load result: ${err.message}`);
+        appendJocLog(`❌ Failed to load decoded file: ${err.message}`);
+      }
+    });
+
+    btnJocRestore?.addEventListener('click', async () => {
+      if (!this._jocOriginalFile) {
+        this._showStatus('⚠️ No original file stored to restore');
+        return;
+      }
+      try {
+        this._showStatus(`Restoring original file: ${this._jocOriginalFile.name}...`);
+        await this.loadFile(this._jocOriginalFile);
+        btnJocRestore.disabled = true;
+        this._showStatus('↩️ Original audio file restored');
+        appendJocLog(`↩️ Restored original file: ${this._jocOriginalFile.name}`);
+      } catch (err) {
+        this._showStatus(`⚠️ Restore failed: ${err.message}`);
+      }
+    });
+
+    // ─── Mini JOC Player Controls Wiring ───────────────────────────────────
+    btnJocPlayPause?.addEventListener('click', () => {
+      this.togglePlay();
+    });
+
+    btnJocStop?.addEventListener('click', () => {
+      this.stop();
+    });
+
+    btnJocPrev?.addEventListener('click', () => {
+      this.playPrev();
+    });
+
+    btnJocNext?.addEventListener('click', () => {
+      this.playNext();
+    });
+
+    jocSeekBar?.addEventListener('input', (e) => {
+      this.seek(parseFloat(e.target.value) / 1000);
+    });
+
+    // Headphone Profile buttons (Phase 1)
+    document.getElementById('btn-profile-standard')?.addEventListener('click', () => {
+      this.setHeadphoneMode('standard');
+    });
+    document.getElementById('btn-profile-sensor')?.addEventListener('click', () => {
+      this.setHeadphoneMode('sensor');
+    });
+
+    // Virtual Head Look toggle (Phase 2)
+    const virtualLookToggle = document.getElementById('virtual-look-toggle');
+    virtualLookToggle?.addEventListener('change', (e) => {
+      this.setVirtualHeadLook(e.target.checked);
+    });
+
+    // Initialize Headphone Profile UI state
+    this.setHeadphoneMode(this.headphoneMode, false);
 
     // Head Tracking Enable/Disable toggle (for standard earbuds/headphones)
     const trackingEnableToggle = document.getElementById('tracking-enable-toggle');
@@ -1911,9 +2699,12 @@ class App {
       if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT') return;
 
       const key = e.key.toLowerCase();
-      if (['w', 'a', 's', 'd', 'arrowup', 'arrowdown'].includes(key)) {
+      if (['w', 'a', 's', 'd', 'arrowup', 'arrowdown', 'arrowleft', 'arrowright'].includes(key)) {
         e.preventDefault();
         this._heldKeys.add(key);
+      }
+      if (e.shiftKey) {
+        this._heldKeys.add('shift');
       }
 
       switch (key) {
@@ -1946,13 +2737,17 @@ class App {
 
     document.addEventListener('keyup', (e) => {
       this._heldKeys.delete(e.key.toLowerCase());
+      if (!e.shiftKey) {
+        this._heldKeys.delete('shift');
+      }
     });
 
     // Movement tick — runs every frame for smooth WASD walking & Arrow height
     const movementTick = () => {
       if (this._heldKeys.size > 0) {
         // Compute movement relative to listener's current yaw
-        const yawRad = (this.tracker.yaw * Math.PI) / 180;
+        const currentYaw = this.headphoneMode === 'standard' ? this.virtualYaw : this.tracker.yaw;
+        const yawRad = (currentYaw * Math.PI) / 180;
         const fwdX =  Math.sin(yawRad);  // forward X component
         const fwdZ =  Math.cos(yawRad);  // forward Z component
         const rightX =  Math.cos(yawRad); // right X component (perpendicular)
@@ -1979,10 +2774,38 @@ class App {
           moved = true;
         }
 
-        // POV Height adjustment via Arrow Up / Arrow Down keys
+        // Virtual Head Look keys (Arrow Left / Right for yaw, Shift + Arrow Up / Down for pitch)
+        if (this.virtualHeadLook) {
+          let lookRotated = false;
+          if (this._heldKeys.has('arrowleft')) {
+            this.virtualYaw = (this.virtualYaw - 2.0) % 360;
+            if (this.virtualYaw < -180) this.virtualYaw += 360;
+            lookRotated = true;
+          }
+          if (this._heldKeys.has('arrowright')) {
+            this.virtualYaw = (this.virtualYaw + 2.0) % 360;
+            if (this.virtualYaw > 180) this.virtualYaw -= 360;
+            lookRotated = true;
+          }
+          if (this._heldKeys.has('shift') && this._heldKeys.has('arrowup')) {
+            this.virtualPitch = Math.min(80, this.virtualPitch + 1.5);
+            lookRotated = true;
+          }
+          if (this._heldKeys.has('shift') && this._heldKeys.has('arrowdown')) {
+            this.virtualPitch = Math.max(-80, this.virtualPitch - 1.5);
+            lookRotated = true;
+          }
+          if (lookRotated) {
+            this._applyVirtualOrientation();
+          }
+        }
+
+        // POV Height adjustment via Arrow Up / Arrow Down keys (when Shift is NOT held)
         let dy = 0;
-        if (this._heldKeys.has('arrowup'))   dy += this._heightSpeed;
-        if (this._heldKeys.has('arrowdown')) dy -= this._heightSpeed;
+        if (!this._heldKeys.has('shift')) {
+          if (this._heldKeys.has('arrowup'))   dy += this._heightSpeed;
+          if (this._heldKeys.has('arrowdown')) dy -= this._heightSpeed;
+        }
         if (dy !== 0) {
           this.visualizer.moveListenerHeightBy(dy);
           moved = true;

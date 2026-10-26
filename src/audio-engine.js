@@ -320,18 +320,35 @@ export class AudioEngine {
                   channels: 12
                 };
               }
+              if (errObj && (errObj.requiresFFCodec || errObj.isAC4)) {
+                const ac4Err = new Error(errObj.error || 'Requires ffcodec64.dll decoder plugin');
+                ac4Err.requiresFFCodec = true;
+                ac4Err.isAC4 = true;
+                ac4Err.ffcodecAvailable = errObj.ffcodecAvailable;
+                ac4Err.filename = errObj.filename || fileName;
+                throw ac4Err;
+              }
               serverErrMsg = errObj.error || `HTTP ${res.status}`;
-            } catch (_) {
+            } catch (jsonErr) {
+              if (jsonErr.requiresFFCodec) throw jsonErr;
               serverErrMsg = await res.text().catch(() => `HTTP ${res.status}`);
             }
             console.warn('[AudioEngine] Multichannel decoder error:', res.status, serverErrMsg);
           }
         } catch (serverErr) {
+          if (serverErr.requiresFFCodec) throw serverErr;
           serverErrMsg = serverErr.message;
           console.warn('[AudioEngine] Decoder server request failed:', serverErr.message);
         }
 
-        // 3. Last resort: try native decode on anything
+        // 3. Last resort: try native decode on anything (unless pure AC-4)
+        if (fileName && fileName.toLowerCase().endsWith('.ac4')) {
+          const ac4Err = new Error('Dolby AC-4 format requires ffcodec64.dll');
+          ac4Err.requiresFFCodec = true;
+          ac4Err.isAC4 = true;
+          throw ac4Err;
+        }
+
         try {
           const fallbackBuffer = await audioContext.decodeAudioData(arrayBuffer.slice(0));
           const ch = fallbackBuffer.numberOfChannels;
@@ -341,7 +358,9 @@ export class AudioEngine {
             isAtmos: ch >= 6
           };
         } catch {
-          throw new Error(serverErrMsg || 'Unable to decode this file. Ensure FFmpeg is installed and the codec is supported.');
+          const unsupportedErr = new Error(serverErrMsg || 'Unable to decode this file with current decoder.');
+          unsupportedErr.unsupportedFormat = true;
+          throw unsupportedErr;
         }
       }
     };
@@ -559,11 +578,11 @@ export class AudioEngine {
    * @param {MediaStream} mediaStream
    * @param {string} [preferredLayout='stereo']
    */
-  connectLiveMediaStream(mediaStream, preferredLayout = 'stereo') {
+  async connectLiveMediaStream(mediaStream, preferredLayout = 'stereo') {
     this.stop();
-    this._initAudioContext();
+    await this.init();
     if (this.audioContext.state === 'suspended') {
-      this.audioContext.resume();
+      await this.audioContext.resume();
     }
     
     this.liveMediaStream = mediaStream;
@@ -587,6 +606,12 @@ export class AudioEngine {
     
     this.splitter = ctx.createChannelSplitter(Math.max(2, layoutChannels));
     this.sourceNode.connect(this.splitter);
+    
+    // Dedicated monitor gain node allowing user to mute loopback playback to prevent echo
+    this.liveMonitorGain = ctx.createGain();
+    this.liveMonitorMuted = false;
+    this.liveMonitorGain.gain.value = 1.0;
+    this.liveMonitorGain.connect(this.masterGain);
     
     this.panners = [];
     this.gains = [];
@@ -624,10 +649,10 @@ export class AudioEngine {
       
       gain.connect(channelAnalyser);
       if (speaker.name === 'LFE' || speaker.isLFE) {
-        channelAnalyser.connect(this.masterGain);
+        channelAnalyser.connect(this.liveMonitorGain);
       } else {
         channelAnalyser.connect(panner);
-        panner.connect(this.masterGain);
+        panner.connect(this.liveMonitorGain);
       }
       
       this.panners.push(panner);
@@ -646,6 +671,14 @@ export class AudioEngine {
     if (this._levelInterval) clearInterval(this._levelInterval);
     this._levelInterval = setInterval(() => this._updateLevels(), 50);
     console.log(`[AudioEngine] Live media stream hooked into layout: ${target} (${layoutChannels} channels)`);
+  }
+
+  setLiveMonitorMuted(muted) {
+    this.liveMonitorMuted = !!muted;
+    if (this.liveMonitorGain && this.audioContext) {
+      this.liveMonitorGain.gain.setValueAtTime(this.liveMonitorMuted ? 0.0 : 1.0, this.audioContext.currentTime);
+    }
+    console.log(`[AudioEngine] Live monitor output ${this.liveMonitorMuted ? 'muted (visualizer only)' : 'unmuted (audible)'}`);
   }
 
   disconnectLiveStream() {

@@ -414,7 +414,11 @@ app.post('/api/decode-atmos', async (req, res) => {
             throw mErr;
           }
           if (isAC4) {
-            throw new Error(`Dolby AC-4 stream detected in "${rawFilename}". Enable Custom Decoders -> Dolby AC-4 Atmos in the Advanced menu.`);
+            const ac4Err = new Error(`Dolby AC-4 stream detected in "${rawFilename}". It requires the ffcodec64.dll decoder plugin.`);
+            ac4Err.isAC4 = true;
+            ac4Err.requiresFFCodec = true;
+            ac4Err.filename = rawFilename;
+            throw ac4Err;
           }
           throw mainErr;
         }
@@ -450,10 +454,14 @@ app.post('/api/decode-atmos', async (req, res) => {
     fs.promises.unlink(tempIn).catch(() => {});
     fs.promises.unlink(tempOut).catch(() => {});
     if (!res.headersSent) {
-      res.status(err.isMPEGH ? 422 : 500).json({
+      res.status((err.isMPEGH || err.requiresFFCodec) ? 422 : 500).json({
         error: err.message,
         isMPEGH: !!err.isMPEGH,
         mpeghAvailable: !!err.mpeghAvailable,
+        requiresFFCodec: !!err.requiresFFCodec || !!err.isAC4,
+        isAC4: !!err.isAC4,
+        ffcodecAvailable: !!ac4Available,
+        filename: rawFilename,
         savedPath: err.savedPath || null
       });
     }

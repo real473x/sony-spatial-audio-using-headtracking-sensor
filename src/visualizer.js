@@ -54,6 +54,9 @@ export class Visualizer {
     this._cameraDragStart = { x: 0, y: 0, az: 0, tilt: 0 };
     this.isDraggingPOVLook = false;
     this._povDragStart = { x: 0, y: 0, yaw: 0, pitch: 0 };
+    this.virtualHeadLookEnabled = false;
+    this.isDraggingVirtualLook = false;
+    this._virtualLookDragStart = { x: 0, y: 0, yaw: 0, pitch: 0 };
     this._onListenerMove = null;
     this._onOrientationChange = null;
 
@@ -637,6 +640,24 @@ export class Visualizer {
     };
   }
 
+  // ─── Virtual Head Look (Phase 2) ──────────────────────────────────────────
+
+  setVirtualHeadLookEnabled(enabled) {
+    this.virtualHeadLookEnabled = !!enabled;
+    if (!this.virtualHeadLookEnabled) {
+      this.isDraggingVirtualLook = false;
+    }
+  }
+
+  setVirtualOrientation(yaw, pitch, roll = 0) {
+    this.yaw = yaw;
+    this.pitch = pitch;
+    this.roll = roll;
+    if (this._onOrientationChange) {
+      this._onOrientationChange(this.yaw, this.pitch, this.roll);
+    }
+  }
+
   // ─── Resize ──────────────────────────────────────────────────────────────────
 
   _resize() {
@@ -832,6 +853,20 @@ export class Visualizer {
       return;
     }
 
+    // Virtual Head Look (Phase 2): Right-click (button === 2) OR Alt+drag OR Shift+drag
+    if (e.button === 2 || e.altKey || (this.virtualHeadLookEnabled && (e.shiftKey || e.button === 2))) {
+      this.isDraggingVirtualLook = true;
+      this._virtualLookDragStart = {
+        x: pos.x,
+        y: pos.y,
+        yaw: this.yaw,
+        pitch: this.pitch
+      };
+      this.canvas.style.cursor = 'crosshair';
+      try { this.canvas.setPointerCapture(e.pointerId); } catch (_) {}
+      return;
+    }
+
     const hit = this._hitTestAxes(pos);
 
     if (hit) {
@@ -875,6 +910,21 @@ export class Visualizer {
       if (nextYaw > 180) nextYaw -= 360;
       if (nextYaw < -180) nextYaw += 360;
       let nextPitch = Math.max(-80, Math.min(80, this._povDragStart.pitch + dy * 0.25));
+      this.yaw = nextYaw;
+      this.pitch = nextPitch;
+      if (this._onOrientationChange) {
+        this._onOrientationChange(this.yaw, this.pitch, this.roll);
+      }
+      return;
+    }
+
+    if (this.isDraggingVirtualLook) {
+      const dx = pos.x - this._virtualLookDragStart.x;
+      const dy = pos.y - this._virtualLookDragStart.y;
+      let nextYaw = (this._virtualLookDragStart.yaw + dx * 0.35) % 360;
+      if (nextYaw > 180) nextYaw -= 360;
+      if (nextYaw < -180) nextYaw += 360;
+      let nextPitch = Math.max(-80, Math.min(80, this._virtualLookDragStart.pitch + dy * 0.25));
       this.yaw = nextYaw;
       this.pitch = nextPitch;
       if (this._onOrientationChange) {
@@ -970,6 +1020,12 @@ export class Visualizer {
     if (this.isDraggingPOVLook) {
       this.isDraggingPOVLook = false;
       this.canvas.style.cursor = this.povFollowSensor ? 'grab' : 'default';
+      try { this.canvas.releasePointerCapture(e.pointerId); } catch (_) {}
+      return;
+    }
+    if (this.isDraggingVirtualLook) {
+      this.isDraggingVirtualLook = false;
+      this.canvas.style.cursor = 'default';
       try { this.canvas.releasePointerCapture(e.pointerId); } catch (_) {}
       return;
     }

@@ -10,6 +10,8 @@ export class HeadTracker {
   constructor() {
     this.ws = null;
     this.connected = false;
+    this.wsConnected = false;
+    this.isStreaming = false;
     this.reconnectTimer = null;
     
     // Raw orientation from OpenTrack
@@ -254,10 +256,18 @@ export class HeadTracker {
     if (url) this.wsUrl = url;
     this._connect();
     
-    // PPS counter
+    // PPS counter and active UDP telemetry watchdog
     this._ppsTimer = setInterval(() => {
       this.packetsPerSecond = this._ppsCounter;
       this._ppsCounter = 0;
+
+      const now = Date.now();
+      const streaming = (this.lastPacketTime > 0) && (now - this.lastPacketTime < 1800);
+      if (streaming !== this.isStreaming) {
+        this.isStreaming = streaming;
+        this.connected = this.wsConnected && this.isStreaming;
+        this._notifyStatus();
+      }
     }, 1000);
   }
 
@@ -274,6 +284,8 @@ export class HeadTracker {
       this.ws.close();
       this.ws = null;
     }
+    this.wsConnected = false;
+    this.isStreaming = false;
     this.connected = false;
     this._notifyStatus();
   }
@@ -338,8 +350,10 @@ export class HeadTracker {
     }
 
     this.ws.onopen = () => {
-      this.connected = true;
-      console.log(`[HeadTracker] Connected to ${this.wsUrl}`);
+      this.wsConnected = true;
+      console.log(`[HeadTracker] Bridge connected to ${this.wsUrl}`);
+      // Only set connected = true when actual UDP 4242 telemetry arrives
+      this.connected = this.isStreaming;
       this._notifyStatus();
     };
 
@@ -355,6 +369,8 @@ export class HeadTracker {
     };
 
     this.ws.onclose = () => {
+      this.wsConnected = false;
+      this.isStreaming = false;
       this.connected = false;
       this._notifyStatus();
       this._scheduleReconnect();
@@ -370,6 +386,11 @@ export class HeadTracker {
 
     this.lastPacketTime = Date.now();
     this._ppsCounter++;
+    if (!this.isStreaming) {
+      this.isStreaming = true;
+      this.connected = true;
+      this._notifyStatus();
+    }
     
     // Store raw values based on configured axis mapping
     this.rawYaw   = data[this.axisSourceYaw] !== undefined ? data[this.axisSourceYaw] : (data.yaw || 0);
@@ -522,13 +543,24 @@ export class HeadTracker {
   _notifyStatus() {
     if (this._onStatusChange) {
       if (!this.enabled) {
-        this._onStatusChange(false, 'Tracking Disabled (Standard Earbuds)');
+        this._onStatusChange(false, 'Tracking Disabled (Standard Earbuds)', {
+          wsConnected: this.wsConnected,
+          isStreaming: false,
+          packetsPerSecond: 0
+        });
         return;
       }
-      const info = this.connected 
+      const isActive = this.wsConnected && this.isStreaming;
+      this.connected = isActive;
+      const info = isActive 
         ? `Connected (${this.packetsPerSecond} Hz)`
-        : 'Disconnected — waiting for OpenTrack...';
-      this._onStatusChange(this.connected, info);
+        : (this.wsConnected ? 'UDP 4242 Stream Inactive' : 'Bridge Disconnected — waiting for OpenTrack / Sony Tracker...');
+      this._onStatusChange(isActive, info, {
+        wsConnected: this.wsConnected,
+        isStreaming: this.isStreaming,
+        packetsPerSecond: this.packetsPerSecond,
+        lastPacketTime: this.lastPacketTime
+      });
     }
   }
 }

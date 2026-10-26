@@ -447,15 +447,11 @@ async function createWindow() {
   // Configure display media request handler to stream audio loopback without blocking prompts
   if (session.defaultSession && session.defaultSession.setDisplayMediaRequestHandler) {
     session.defaultSession.setDisplayMediaRequestHandler((request, callback) => {
-      desktopCapturer.getSources({ types: ['window', 'screen'] }).then((sources) => {
-        const mpegh = sources.find(s => 
-          s.name.toLowerCase().includes('mpeg-h') || 
-          s.name.toLowerCase().includes('vvplayer') || 
-          s.name.toLowerCase().includes('fraunhofer')
-        );
-        const chosen = mpegh || sources[0];
-        callback({ video: chosen, audio: 'loopback' });
-      }).catch(() => {
+      desktopCapturer.getSources({ types: ['screen'] }).then((sources) => {
+        const screen = sources[0];
+        callback({ video: screen, audio: 'loopback' });
+      }).catch((err) => {
+        console.error('[Desktop] Failed to get screen loopback source:', err);
         callback({});
       });
     });
@@ -527,6 +523,30 @@ ipcMain.on('open-bluetooth-settings', () => {
 
 ipcMain.handle('scan-devices', () => {
   return scanConnectedAudioDevices();
+});
+
+ipcMain.handle('restart-tracker', () => {
+  console.log('[Desktop] Restarting head tracker supervisor...');
+  if (spawnedTrackerProcess) {
+    try {
+      if (process.platform === 'win32') {
+        exec(`taskkill /pid ${spawnedTrackerProcess.pid} /f /t`);
+      } else {
+        spawnedTrackerProcess.kill();
+      }
+    } catch (_) {}
+    spawnedTrackerProcess = null;
+  }
+  if (nativeTracker) {
+    try { nativeTracker.stop(); } catch (_) {}
+    nativeTracker = null;
+  }
+  autoStartHeadTracker();
+  const status = scanConnectedAudioDevices();
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send('device-status-update', status);
+  }
+  return { success: true, status };
 });
 
 // ─── MPEG-H VVPlayer Integration & Audio Stream Hooking ───────────────────────
@@ -713,4 +733,71 @@ if (!gotTheLock) {
     app.quit();
   });
 }
+
+// ─── 8. JOC Dolby Atmos Decoder (Isolated Pre-Processor) ─────────────────────
+const JOCDecoder = require('./joc-decoder');
+const jocDecoder = new JOCDecoder();
+
+// Forward log messages to renderer
+jocDecoder.onLog = (msg) => {
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send('joc-decoder-log', msg);
+  }
+};
+
+ipcMain.handle('joc-get-status', () => {
+  return jocDecoder.getStatus();
+});
+
+ipcMain.handle('joc-decode-openjoc', async (event, filePath, layout) => {
+  try {
+    return await jocDecoder.decodeWithOpenJOC(filePath, layout || '7.1.4');
+  } catch (err) {
+    return { success: false, error: err.message };
+  }
+});
+
+ipcMain.handle('joc-decode-cavernize', async (event, filePath, layout) => {
+  try {
+    return await jocDecoder.decodeWithCavernize(filePath, layout || '7.1.4');
+  } catch (err) {
+    return { success: false, error: err.message };
+  }
+});
+
+ipcMain.on('joc-cancel', () => {
+  jocDecoder.cancel();
+});
+
+ipcMain.handle('joc-get-restore-info', () => {
+  return jocDecoder.getRestoreInfo();
+});
+
+ipcMain.on('joc-cleanup', () => {
+  jocDecoder.cleanup();
+});
+
+ipcMain.handle('joc-read-file', async (event, filePath) => {
+  try {
+    const data = await jocDecoder.readFile(filePath);
+    return { success: true, data };
+  } catch (err) {
+    return { success: false, error: err.message };
+  }
+});
+
+ipcMain.handle('joc-select-file', async () => {
+  const { canceled, filePaths } = await dialog.showOpenDialog(mainWindow, {
+    title: 'Select E-AC-3 / Audio File for JOC Decoding',
+    filters: [
+      { name: 'Dolby Atmos / Audio Files', extensions: ['eac3', 'ec3', 'm4a', 'mp4', 'mkv', 'ac3', 'flac', 'wav'] },
+      { name: 'All Files', extensions: ['*'] }
+    ],
+    properties: ['openFile']
+  });
+  if (!canceled && filePaths.length > 0) {
+    return filePaths[0];
+  }
+  return null;
+});
 

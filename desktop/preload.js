@@ -16,6 +16,7 @@ contextBridge.exposeInMainWorld('desktopAPI', {
   openToolsFolder: () => ipcRenderer.send('open-tools-folder'),
   openBluetoothSettings: () => ipcRenderer.send('open-bluetooth-settings'),
   scanDevices: () => ipcRenderer.invoke('scan-devices'),
+  restartTracker: () => ipcRenderer.invoke('restart-tracker'),
 
   // Listeners for device and tracker events
   onDeviceStatusUpdate: (callback) => {
@@ -36,5 +37,18 @@ contextBridge.exposeInMainWorld('desktopAPI', {
   // MPEG-H VVPlayer Integration & Audio Stream Hooking
   getMpeghStatus: () => ipcRenderer.invoke('get-mpegh-status'),
   openMpeghVv: (filePath) => ipcRenderer.invoke('open-mpegh-vv', filePath),
-  getMpeghSources: () => ipcRenderer.invoke('get-mpegh-sources')
+  getMpeghSources: () => ipcRenderer.invoke('get-mpegh-sources'),
+
+  // JOC Dolby Atmos Object Decoder Pre-Processor
+  jocGetStatus: () => ipcRenderer.invoke('joc-get-status'),
+  jocDecodeOpenJOC: (filePath, layout) => ipcRenderer.invoke('joc-decode-openjoc', filePath, layout),
+  jocDecodeCavernize: (filePath, layout) => ipcRenderer.invoke('joc-decode-cavernize', filePath, layout),
+  jocCancel: () => ipcRenderer.send('joc-cancel'),
+  jocGetRestoreInfo: () => ipcRenderer.invoke('joc-get-restore-info'),
+  jocCleanup: () => ipcRenderer.send('joc-cleanup'),
+  jocReadFile: (filePath) => ipcRenderer.invoke('joc-read-file', filePath),
+  jocSelectFile: () => ipcRenderer.invoke('joc-select-file'),
+  onJocLog: (callback) => {
+    ipcRenderer.on('joc-decoder-log', (event, data) => callback(data));
+  }
 });
