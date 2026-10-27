@@ -73,9 +73,29 @@ export class Visualizer {
     this.povFollowSensor = false;
     this.walkableSceneMode = false;
     this.scene = 'living-room';
+    this._pendingCinemaSpawn = null;
+    this._cinemaSpeakerLayout = null;
+    this._cinemaRoomGeometry = null;
     this.scenes = {
       'living-room': { title: 'Living room', hint: 'HOME CINEMA · ACTIVE SPEAKER POSITIONS', width: 5.4, depth: 6.5, open: false },
-      cinema: { title: 'Cinema hall', hint: 'IMMERSIVE THEATRE · ACTIVE SPEAKER POSITIONS', width: 10, depth: 16, open: false },
+      cinema: {
+        title: 'Cinema 1',
+        hint: '64-SPEAKER ATMOS · SCOPE SCREEN · 14 ROWS',
+        width: 14,
+        depth: 24,
+        open: false,
+        cinema: true,
+        spawn: { x: 0, y: 4, z: -13.7 }
+      },
+      'cinema-2': {
+        title: 'Cinema 2 · Rear seat',
+        hint: '64-SPEAKER ATMOS · REAR-SEAT VIEW',
+        width: 14,
+        depth: 24,
+        open: false,
+        cinema: true,
+        spawn: { x: 0, y: 6.1, z: -20.3 }
+      },
       concert: { title: 'Open-air concert', hint: 'LIVE EVENT · ACTIVE SPEAKER POSITIONS', width: 18, depth: 20, open: true },
       studio: { title: 'Reference studio', hint: 'NEARFIELD ROOM · ACTIVE SPEAKER POSITIONS', width: 5, depth: 6, open: false }
     };
@@ -214,40 +234,96 @@ export class Visualizer {
     this.colors = this.themes[theme] || this.themes.light;
   }
 
+  _isCinemaScene() {
+    return this.scenes[this.scene]?.cinema === true;
+  }
+
   setScene(scene) {
     if (!Object.hasOwn(this.scenes, scene)) {
       throw new RangeError(`Unknown listening scene: ${scene}`);
     }
+    const changed = this.scene !== scene;
     this.scene = scene;
+    const sceneConfig = this.scenes[scene];
+    if (changed && sceneConfig.cinema) {
+      this._pendingCinemaSpawn = sceneConfig.spawn;
+      if (this.walkableSceneMode) this._applyCinemaSpawn();
+    } else if (changed) {
+      this._pendingCinemaSpawn = null;
+    }
     if (this.walkableSceneMode) {
       this._clampListenerToScene();
     }
-    return this.scenes[scene];
+    return sceneConfig;
   }
 
   setWalkableSceneMode(enabled) {
     this.walkableSceneMode = !!enabled;
     if (this.walkableSceneMode) {
+      if (this._pendingCinemaSpawn && this._isCinemaScene()) this._applyCinemaSpawn();
       this._clampListenerToScene();
     }
   }
 
+  _applyCinemaSpawn() {
+    const spawn = this._pendingCinemaSpawn;
+    if (!spawn) return;
+    this.listenerMX = spawn.x;
+    this.listenerMY = spawn.y;
+    this.listenerMZ = spawn.z;
+    this.listenerX = this.listenerMX;
+    this.listenerY = this.listenerMZ;
+    this._pendingCinemaSpawn = null;
+    this._onListenerMove?.(this.listenerMX, this.listenerMY, this.listenerMZ);
+  }
+
   _sceneGeometry() {
     const scene = this.scenes[this.scene];
+    if (scene.cinema) {
+      return {
+        halfWidth: scene.width / 2,
+        halfDepth: scene.depth / 2,
+        minX: -scene.width / 2,
+        maxX: scene.width / 2,
+        minZ: -scene.depth,
+        maxZ: 0,
+        floorY: 0,
+        ceilingY: 8,
+        cinema: true
+      };
+    }
+    const halfWidth = scene.width / 2;
+    const halfDepth = scene.depth / 2;
     return {
-      halfWidth: scene.width / 2,
-      halfDepth: scene.depth / 2,
+      halfWidth,
+      halfDepth,
+      minX: -halfWidth,
+      maxX: halfWidth,
+      minZ: -halfDepth,
+      maxZ: halfDepth,
       floorY: -1.15,
-      ceilingY: this.scene === 'cinema' ? 4.8 : this.scene === 'concert' ? 7 : 1.7
+      ceilingY: this.scene === 'concert' ? 7 : 1.7,
+      cinema: false
     };
   }
 
+  _cinemaFloorAtDepth(depth) {
+    if (depth < 3) return 0.6;
+    if (depth < 6) return 0;
+    if (depth < 20.3) {
+      const row = Math.min(13, Math.floor((depth - 6) / 1.1));
+      return (row + 1) * 0.35;
+    }
+    return depth < 22 ? 4.9 : 4.5;
+  }
+
   _clampListenerToScene() {
-    const { halfWidth, halfDepth, floorY, ceilingY } = this._sceneGeometry();
+    const { minX, maxX, minZ, maxZ, floorY, ceilingY, cinema } = this._sceneGeometry();
     const margin = 0.4;
-    const x = Math.max(-halfWidth + margin, Math.min(halfWidth - margin, this.listenerMX));
-    const z = Math.max(-halfDepth + margin, Math.min(halfDepth - margin, this.listenerMZ));
-    const y = Math.max(floorY + 0.15, Math.min(ceilingY - 0.15, this.listenerMY));
+    const x = Math.max(minX + margin, Math.min(maxX - margin, this.listenerMX));
+    const z = Math.max(minZ + margin, Math.min(maxZ - margin, this.listenerMZ));
+    const minY = cinema ? this._cinemaFloorAtDepth(-z) + 0.15 : floorY + 0.15;
+    const y = Math.max(minY, Math.min(ceilingY - 0.15, this.listenerMY));
     if (x !== this.listenerMX || y !== this.listenerMY || z !== this.listenerMZ) {
       this.listenerMX = x;
       this.listenerMY = y;
@@ -388,11 +464,12 @@ export class Visualizer {
     let mz = meterZ !== undefined ? meterZ : meterY;
 
     if (this.walkableSceneMode) {
-      const { halfWidth, halfDepth, floorY, ceilingY } = this._sceneGeometry();
+      const { minX, maxX, minZ, maxZ, floorY, ceilingY, cinema } = this._sceneGeometry();
       const margin = 0.4;
-      mx = Math.max(-halfWidth + margin, Math.min(halfWidth - margin, mx));
-      my = Math.max(floorY + 0.15, Math.min(ceilingY - 0.15, my));
-      mz = Math.max(-halfDepth + margin, Math.min(halfDepth - margin, mz));
+      mx = Math.max(minX + margin, Math.min(maxX - margin, mx));
+      const minY = cinema ? this._cinemaFloorAtDepth(-mz) + 0.15 : floorY + 0.15;
+      my = Math.max(minY, Math.min(ceilingY - 0.15, my));
+      mz = Math.max(minZ + margin, Math.min(maxZ - margin, mz));
     } else if (!this.allowOutsideBoundary) {
       const R = this.roomRadius;
       const dist = Math.hypot(mx, mz);
@@ -411,10 +488,14 @@ export class Visualizer {
   /** Move listener by horizontal delta (meters). Used by WASD keyboard walking. */
   moveListenerBy(dx, dz) {
     if (this.walkableSceneMode) {
-      const { halfWidth, halfDepth } = this._sceneGeometry();
+      const { minX, maxX, minZ, maxZ, cinema } = this._sceneGeometry();
       const margin = 0.4;
-      this.listenerMX = Math.max(-halfWidth + margin, Math.min(halfWidth - margin, this.listenerMX + dx));
-      this.listenerMZ = Math.max(-halfDepth + margin, Math.min(halfDepth - margin, this.listenerMZ + dz));
+      const previousFloor = cinema ? this._cinemaFloorAtDepth(-this.listenerMZ) : 0;
+      this.listenerMX = Math.max(minX + margin, Math.min(maxX - margin, this.listenerMX + dx));
+      this.listenerMZ = Math.max(minZ + margin, Math.min(maxZ - margin, this.listenerMZ + dz));
+      if (cinema) {
+        this.listenerMY += this._cinemaFloorAtDepth(-this.listenerMZ) - previousFloor;
+      }
       this.listenerX = this.listenerMX;
       this.listenerY = this.listenerMZ;
       if (this._onListenerMove) this._onListenerMove(this.listenerMX, this.listenerMY, this.listenerMZ);
@@ -441,10 +522,13 @@ export class Visualizer {
 
   /** Move listener POV height by delta (meters). Used by Arrow Up / Down keys. */
   moveListenerHeightBy(dy) {
-    const { floorY, ceilingY } = this.walkableSceneMode
+    const { floorY, ceilingY, cinema } = this.walkableSceneMode
       ? this._sceneGeometry()
       : { floorY: -1.5, ceilingY: 2.5 };
-    const MIN_H = this.walkableSceneMode ? floorY + 0.15 : floorY;
+    const minY = this.walkableSceneMode && cinema
+      ? this._cinemaFloorAtDepth(-this.listenerMZ) + 0.15
+      : floorY + (this.walkableSceneMode ? 0.15 : 0);
+    const MIN_H = minY;
     const MAX_H = this.walkableSceneMode ? ceilingY - 0.15 : ceilingY;
     this.listenerMY = Math.max(MIN_H, Math.min(MAX_H, this.listenerMY + dy));
     if (this._onListenerMove) this._onListenerMove(this.listenerMX, this.listenerMY, this.listenerMZ);
@@ -452,10 +536,13 @@ export class Visualizer {
 
   /** Set listener POV height directly (meters). */
   setListenerHeight(meterY) {
-    const { floorY, ceilingY } = this.walkableSceneMode
+    const { floorY, ceilingY, cinema } = this.walkableSceneMode
       ? this._sceneGeometry()
       : { floorY: -1.5, ceilingY: 2.5 };
-    const MIN_H = this.walkableSceneMode ? floorY + 0.15 : floorY;
+    const minY = this.walkableSceneMode && cinema
+      ? this._cinemaFloorAtDepth(-this.listenerMZ) + 0.15
+      : floorY + (this.walkableSceneMode ? 0.15 : 0);
+    const MIN_H = minY;
     const MAX_H = this.walkableSceneMode ? ceilingY - 0.15 : ceilingY;
     this.listenerMY = Math.max(MIN_H, Math.min(MAX_H, meterY));
     if (this._onListenerMove) this._onListenerMove(this.listenerMX, this.listenerMY, this.listenerMZ);
@@ -558,6 +645,33 @@ export class Visualizer {
   }
 
   _sceneSpeakerPosition(speaker) {
+    if (this._isCinemaScene()) {
+      const azimuth = (speaker.azimuth * Math.PI) / 180;
+      const directionX = Math.sin(azimuth);
+      const directionZ = Math.cos(azimuth);
+      const centerDepth = 12;
+      const halfWidth = 6.5;
+      const depthToWall = directionZ >= 0
+        ? (centerDepth - 0.2) / Math.max(directionZ, 0.0001)
+        : (23.8 - centerDepth) / Math.max(-directionZ, 0.0001);
+      const wallDistance = Math.min(
+        halfWidth / Math.max(Math.abs(directionX), 0.0001),
+        depthToWall
+      );
+      const depth = centerDepth - directionZ * wallDistance;
+      const y = speaker.isLFE || speaker.isBottom
+        ? 0.3
+        : speaker.isHeight
+          ? 7.7
+          : Math.max(3.2, Math.min(6.5, 3.2 + ((depth - 5) / 14.4) * 3.3));
+      return {
+        x: directionX * wallDistance,
+        y,
+        z: -depth
+      };
+    }
+
+    // Keep the existing compact room mapping for non-cinema scenes.
     const { halfWidth, halfDepth, floorY, ceilingY } = this._sceneGeometry();
     const az = (speaker.azimuth * Math.PI) / 180;
     const dirX = Math.sin(az);
@@ -1453,7 +1567,327 @@ export class Visualizer {
     }
   }
 
+  _getCinemaSpeakerLayout() {
+    if (this._cinemaSpeakerLayout) return this._cinemaSpeakerLayout;
+
+    const speakers = [];
+    const add = (name, group, x, y, cinemaZ) => {
+      speakers.push({
+        name,
+        group,
+        x,
+        y,
+        z: -cinemaZ,
+        downTiltDegrees: group === 'side' ? 18 : 0,
+        inwardDirection: x < 0 ? 1 : -1
+      });
+    };
+
+    [
+      ['L', -5.5], ['LC', -2.75], ['C', 0], ['RC', 2.75], ['R', 5.5]
+    ].forEach(([name, x]) => add(name, 'screen', x, 3.5, 0.2));
+    add('Screen sub L', 'sub', -1.8, 0.3, 0.2);
+    add('Screen sub R', 'sub', 1.8, 0.3, 0.2);
+
+    for (let index = 0; index < 10; index++) {
+      const cinemaZ = 5 + index * 1.6;
+      const y = 3.2 + (3.3 * index) / 9;
+      add(`Side L ${String(index + 1).padStart(2, '0')}`, 'side', -6.9, y, cinemaZ);
+      add(`Side R ${String(index + 1).padStart(2, '0')}`, 'side', 6.9, y, cinemaZ);
+    }
+
+    [-6, -4.5, -3, -1.5, 1.5, 3, 4.5, 6].forEach((x, index) => {
+      add(`Rear ${String(index + 1).padStart(2, '0')}`, 'rear', x, 6.2, 21.9);
+    });
+    // Add a center rear fill to reach the requested 64-speaker total.
+    add('Rear center', 'rear', 0, 6.2, 21.9);
+
+    for (let index = 0; index < 10; index++) {
+      const cinemaZ = 4 + (16 * index) / 9;
+      add(`Top L ${String(index + 1).padStart(2, '0')}`, 'overhead', -3, 7.7, cinemaZ);
+      add(`Top R ${String(index + 1).padStart(2, '0')}`, 'overhead', 3, 7.7, cinemaZ);
+    }
+
+    [-4.5, -1.5, 1.5, 4.5].forEach((x, index) => {
+      add(`Stage sub ${index + 1}`, 'sub', x, 0, 0.2);
+    });
+    [-1, 1].forEach((side) => {
+      [10, 18].forEach((cinemaZ) => {
+        add(`Surround sub ${side < 0 ? 'L' : 'R'} ${cinemaZ}`, 'sub', side * 6.8, 6.4, cinemaZ);
+      });
+    });
+
+    if (speakers.length !== 64) {
+      throw new Error(`Cinema speaker layout must contain 64 speakers; got ${speakers.length}.`);
+    }
+    this._cinemaSpeakerLayout = speakers;
+    return speakers;
+  }
+
+  _getCinemaRoomGeometry() {
+    if (this._cinemaRoomGeometry) return this._cinemaRoomGeometry;
+
+    const polygons = [];
+    const lines = [];
+    const treads = [];
+    const aisles = [];
+    const line = (collection, x1, y1, z1, x2, y2, z2) => {
+      collection.push([[x1, y1, z1], [x2, y2, z2]]);
+    };
+    const quad = (collection, x1, y1, z1, x2, y2, z2, x3, y3, z3, x4, y4, z4, style) => {
+      collection.push({ points: [[x1, y1, z1], [x2, y2, z2], [x3, y3, z3], [x4, y4, z4]], style });
+    };
+
+    quad(polygons, -7, 0, 0, 7, 0, 0, 7, 0, -24, -7, 0, -24, 'floor');
+    quad(polygons, -7, 8, 0, 7, 8, 0, 7, 8, -24, -7, 8, -24, 'ceiling');
+    quad(polygons, -7, 0, 0, -7, 8, 0, -7, 8, -24, -7, 0, -24, 'wall');
+    quad(polygons, 7, 0, 0, 7, 0, -24, 7, 8, -24, 7, 8, 0, 'wall');
+    quad(polygons, -7, 0, -24, -7, 8, -24, 7, 8, -24, 7, 0, -24, 'wall');
+    quad(polygons, -7, 0, -3, 7, 0, -3, 7, 0.6, -3, -7, 0.6, -3, 'stage');
+    quad(polygons, -7, 0.6, 0, 7, 0.6, 0, 7, 0.6, -3, -7, 0.6, -3, 'stage');
+
+    const screenZ = -0.5;
+    quad(polygons, -6.4, 1, screenZ, 6.4, 1, screenZ, 6.4, 7, screenZ, -6.4, 7, screenZ, 'screen-frame');
+    const imageHeight = 12.8 / 2.39;
+    quad(
+      polygons,
+      -6.4, 4 - imageHeight / 2, screenZ - 0.015,
+      6.4, 4 - imageHeight / 2, screenZ - 0.015,
+      6.4, 4 + imageHeight / 2, screenZ - 0.015,
+      -6.4, 4 + imageHeight / 2, screenZ - 0.015,
+      'screen'
+    );
+
+    quad(polygons, -7, 4.5, -22, 7, 4.5, -22, 7, 4.5, -24, -7, 4.5, -24, 'booth');
+    quad(polygons, -7, 4.5, -24, -7, 7.5, -24, 7, 7.5, -24, 7, 4.5, -24, 'booth');
+    quad(polygons, -7, 4.5, -22, -7, 7.5, -22, -7, 7.5, -24, -7, 4.5, -24, 'booth');
+    quad(polygons, 7, 4.5, -22, 7, 4.5, -24, 7, 7.5, -24, 7, 7.5, -22, 'booth');
+    quad(polygons, -1.2, 5, -22.01, 1.2, 5, -22.01, 1.2, 6, -22.01, -1.2, 6, -22.01, 'booth-window');
+
+    for (let depth = 2; depth < 24; depth += 2) {
+      line(lines, -7, 0.015, -depth, 7, 0.015, -depth);
+    }
+    for (let x = -6; x <= 6; x += 2) {
+      line(lines, x, 0.015, 0, x, 0.015, -24);
+    }
+    for (const x of [-7, 7]) {
+      line(lines, x, 0, 0, x, 8, 0);
+      line(lines, x, 8, 0, x, 8, -24);
+      line(lines, x, 0, -24, x, 8, -24);
+    }
+
+    const seatBanks = [[-6.5, -4.8], [-4.2, 4.2], [4.8, 6.5]];
+    for (let row = 0; row < 14; row++) {
+      const depth = 6 + row * 1.1;
+      const z = -depth;
+      const rearZ = z - 1.1;
+      const floorY = (row + 1) * 0.35;
+      const previousY = row * 0.35;
+      for (const [left, right] of seatBanks) {
+        quad(treads, left, floorY, z, right, floorY, z, right, floorY, rearZ, left, floorY, rearZ, 'tread');
+        line(lines, left, previousY, z, right, previousY, z);
+        line(lines, left, previousY, z, left, floorY, z);
+        line(lines, right, previousY, z, right, floorY, z);
+        line(lines, left, floorY + 0.94, rearZ + 0.18, right, floorY + 0.94, rearZ + 0.18);
+        for (let seatX = left + 0.32; seatX < right - 0.2; seatX += 0.58) {
+          line(lines, seatX, floorY + 0.43, rearZ + 0.18, seatX, floorY + 0.94, rearZ + 0.18);
+        }
+      }
+
+      for (const aisleX of [-4.5, 4.5]) {
+        quad(
+          aisles,
+          aisleX - 0.3, floorY, z, aisleX + 0.3, floorY, z,
+          aisleX + 0.3, floorY, rearZ, aisleX - 0.3, floorY, rearZ,
+          'aisle'
+        );
+      }
+    }
+
+    const polygonGroups = new Map();
+    for (const polygon of polygons) {
+      if (!polygonGroups.has(polygon.style)) polygonGroups.set(polygon.style, []);
+      polygonGroups.get(polygon.style).push(polygon);
+    }
+
+    this._cinemaRoomGeometry = { polygonGroups, lines, treads, aisles };
+    return this._cinemaRoomGeometry;
+  }
+
+  _drawCinemaRoom() {
+    const ctx = this.ctx;
+    const geometry = this._getCinemaRoomGeometry();
+    const dark = this.theme === 'dark';
+    const polygonStyles = {
+      floor: dark ? 'rgba(17, 23, 35, 0.92)' : 'rgba(45, 54, 68, 0.88)',
+      wall: dark ? 'rgba(22, 29, 43, 0.38)' : 'rgba(70, 78, 91, 0.2)',
+      ceiling: dark ? 'rgba(8, 12, 21, 0.14)' : 'rgba(45, 53, 65, 0.08)',
+      stage: dark ? 'rgba(45, 53, 70, 0.92)' : 'rgba(75, 79, 87, 0.9)',
+      'screen-frame': dark ? '#111827' : '#263344',
+      screen: dark ? 'rgba(105, 173, 215, 0.62)' : 'rgba(121, 183, 218, 0.72)',
+      booth: dark ? 'rgba(13, 19, 30, 0.96)' : 'rgba(42, 48, 59, 0.92)',
+      'booth-window': dark ? 'rgba(100, 177, 220, 0.7)' : 'rgba(133, 198, 229, 0.72)',
+      tread: dark ? 'rgba(87, 46, 60, 0.8)' : 'rgba(111, 63, 72, 0.72)',
+      aisle: dark ? 'rgba(71, 77, 89, 0.78)' : 'rgba(115, 119, 124, 0.72)'
+    };
+
+    const projectClippedPolygon = (points) => {
+      const near = 0.08;
+      const cameraPoints = points.map(([x, y, z]) => this._toCamSpace(x, y, z));
+      const clipped = [];
+      for (let index = 0; index < cameraPoints.length; index++) {
+        const current = cameraPoints[index];
+        const next = cameraPoints[(index + 1) % cameraPoints.length];
+        const currentInside = current.camZ >= near;
+        const nextInside = next.camZ >= near;
+        if (currentInside) clipped.push(current);
+        if (currentInside !== nextInside) {
+          const fraction = (near - current.camZ) / (next.camZ - current.camZ);
+          clipped.push({
+            camX: current.camX + (next.camX - current.camX) * fraction,
+            camY: current.camY + (next.camY - current.camY) * fraction,
+            camZ: near
+          });
+        }
+      }
+      return clipped.map(point => this._camToScreen(point.camX, point.camY, point.camZ));
+    };
+
+    const fillPolygons = (polygons) => {
+      if (polygons.length === 0) return;
+      ctx.beginPath();
+      let hasVisiblePolygon = false;
+      for (const polygon of polygons) {
+        const projected = projectClippedPolygon(polygon.points);
+        if (projected.length < 3) continue;
+        ctx.moveTo(projected[0].x, projected[0].y);
+        for (let index = 1; index < projected.length; index++) {
+          ctx.lineTo(projected[index].x, projected[index].y);
+        }
+        ctx.closePath();
+        hasVisiblePolygon = true;
+      }
+      if (!hasVisiblePolygon) return;
+      ctx.fillStyle = polygonStyles[polygons[0].style];
+      ctx.fill();
+    };
+
+    const strokeWorldLines = (segments, color, width) => {
+      ctx.beginPath();
+      for (const [start, end] of segments) {
+        let a = this._toCamSpace(start[0], start[1], start[2]);
+        let b = this._toCamSpace(end[0], end[1], end[2]);
+        if (a.camZ < 0.08 && b.camZ < 0.08) continue;
+        if (a.camZ < 0.08 || b.camZ < 0.08) {
+          const fraction = (0.08 - a.camZ) / (b.camZ - a.camZ);
+          const intersection = {
+            camX: a.camX + (b.camX - a.camX) * fraction,
+            camY: a.camY + (b.camY - a.camY) * fraction,
+            camZ: 0.08
+          };
+          if (a.camZ < 0.08) a = intersection;
+          else b = intersection;
+        }
+        const screenA = this._camToScreen(a.camX, a.camY, a.camZ);
+        const screenB = this._camToScreen(b.camX, b.camY, b.camZ);
+        ctx.moveTo(screenA.x, screenA.y);
+        ctx.lineTo(screenB.x, screenB.y);
+      }
+      ctx.strokeStyle = color;
+      ctx.lineWidth = width;
+      ctx.stroke();
+    };
+
+    for (const polygons of geometry.polygonGroups.values()) fillPolygons(polygons);
+    fillPolygons(geometry.treads);
+    fillPolygons(geometry.aisles);
+    strokeWorldLines(geometry.lines, dark ? 'rgba(186, 139, 151, 0.56)' : 'rgba(83, 45, 51, 0.6)', 1);
+    this._drawCinemaSpeakerArray();
+  }
+
+  _drawCinemaSpeakerArray() {
+    const ctx = this.ctx;
+    const colors = {
+      screen: '#ffd08a',
+      side: '#f07491',
+      rear: '#8faeff',
+      overhead: '#c19aff',
+      sub: '#59d5dc'
+    };
+    const paths = {
+      screen: [],
+      side: [],
+      rear: [],
+      overhead: [],
+      sub: []
+    };
+    const sideAimLines = [];
+
+    for (const speaker of this._getCinemaSpeakerLayout()) {
+      const projected = this._project(speaker.x, speaker.y, speaker.z);
+      if (projected.inFront === false) continue;
+      const size = Math.max(2, Math.min(9, projected.scale * 0.045));
+      if (speaker.group === 'side') {
+        const aimDistance = 0.42;
+        const aimY = Math.tan((speaker.downTiltDegrees * Math.PI) / 180) * aimDistance;
+        const aim = this._project(
+          speaker.x + speaker.inwardDirection * aimDistance,
+          speaker.y - aimY,
+          speaker.z
+        );
+        if (aim.inFront !== false) {
+          sideAimLines.push([projected.x, projected.y, aim.x, aim.y]);
+        }
+      }
+      const path = paths[speaker.group];
+      if (speaker.group === 'overhead') {
+        path.push({ shape: 'diamond', x: projected.x, y: projected.y, size });
+      } else if (speaker.group === 'sub') {
+        path.push({ shape: 'circle', x: projected.x, y: projected.y, size: size * 0.72 });
+      } else {
+        path.push({ shape: 'square', x: projected.x, y: projected.y, size });
+      }
+    }
+
+    for (const [group, icons] of Object.entries(paths)) {
+      ctx.beginPath();
+      for (const icon of icons) {
+        if (icon.shape === 'circle') {
+          ctx.moveTo(icon.x + icon.size, icon.y);
+          ctx.arc(icon.x, icon.y, icon.size, 0, Math.PI * 2);
+        } else if (icon.shape === 'diamond') {
+          ctx.moveTo(icon.x, icon.y - icon.size);
+          ctx.lineTo(icon.x + icon.size, icon.y);
+          ctx.lineTo(icon.x, icon.y + icon.size);
+          ctx.lineTo(icon.x - icon.size, icon.y);
+          ctx.closePath();
+        } else {
+          ctx.rect(icon.x - icon.size, icon.y - icon.size, icon.size * 2, icon.size * 2);
+        }
+      }
+      ctx.fillStyle = colors[group];
+      ctx.fill();
+      ctx.strokeStyle = 'rgba(9, 15, 25, 0.9)';
+      ctx.lineWidth = 0.7;
+      ctx.stroke();
+    }
+
+    ctx.beginPath();
+    for (const [x1, y1, x2, y2] of sideAimLines) {
+      ctx.moveTo(x1, y1);
+      ctx.lineTo(x2, y2);
+    }
+    ctx.strokeStyle = colors.side;
+    ctx.lineWidth = 1;
+    ctx.stroke();
+  }
+
   _drawPOVRoom() {
+    if (this._isCinemaScene()) {
+      this._drawCinemaRoom();
+      return;
+    }
+
     const ctx = this.ctx;
     const scene = this.scenes[this.scene];
     const { halfWidth, halfDepth, floorY, ceilingY } = this._sceneGeometry();
@@ -1641,6 +2075,10 @@ export class Visualizer {
   // ─── Speaker Rendering (3D depth-sorted) ─────────────────────────────────────
 
   _drawSpeakers() {
+    if (this.walkableSceneMode && this._isCinemaScene()) {
+      this.activeGazeSpeaker = null;
+      return;
+    }
     if (!this.speakers.length) return;
     const ctx = this.ctx;
 
@@ -2254,7 +2692,7 @@ export class Visualizer {
     // ── 2. Direct Gaze Speaker Targeting ──────────────────────────────────────
     let closestSp = null;
     let minDiffDeg = 360;
-    if (this.speakers.length > 0) {
+    if (this.speakers.length > 0 && !this._isCinemaScene()) {
       for (const sp of this.speakers) {
         if (sp.isLFE) continue;
         const c = this._toCamSpace(sp.pos3D.x, sp.pos3D.y, sp.pos3D.z);

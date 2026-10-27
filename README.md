@@ -52,6 +52,12 @@ A universal spatial audio player for Windows with real-time head tracking via UD
 - **Speaker Activity Glow**: Dynamic real-time glow reflecting instantaneous audio amplitude per channel.
 - **Real-Time Spectrum Waveform**: Ambient frequency waveform ring drawn on the floor soundfield.
 
+### 🎬 Walkable Dolby Atmos Cinema
+- **Cinema 1 / Cinema 2 Views**: Explore the same auditorium and speaker array from a middle-row or rear-seat starting position.
+- **64-Speaker Reference Array**: Visualizes the behind-screen L/C/R array, side and overhead rows, bass-management subwoofers, and a center rear-fill speaker to complete the specified 64-speaker count.
+- **Scope Screen & Stadium Seating**: Includes a 2.39:1 image aperture, 14 stepped seating rows, twin aisles, stage, and projection booth.
+- **Existing Binaural Audio in Cinema POV**: The 64-speaker array remains visual-only and does not create 64 audio outputs. While Cinema POV is active, the current input channels are positioned around the auditorium and listener movement updates their binaural perspective.
+
 ### 🔍 3D Plane Zoom Controls
 - **Mouse Wheel Zoom**: Smoothly zoom in and out of the 3D visualizer canvas using the mouse scroll wheel.
 - **On-Screen Zoom Buttons**: Direct `➕` (Zoom In) and `➖` (Zoom Out) buttons in the visualizer overlay.

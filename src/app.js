@@ -106,7 +106,7 @@ class App {
       if (this.activeEffect) {
         this.stopEffect(false);
       }
-      this.engine.setListenerPosition(meterX, meterY, meterZ);
+      this._syncAudioListenerPosition(meterX, meterY, meterZ);
       this._updateHeightDisplay();
     });
 
@@ -126,8 +126,12 @@ class App {
       this.visualizer.updateHeadOrientation(yaw, pitch, roll);
       // Only set position from tracker if no automated spatial effect is running
       if (pos && !this.activeEffect) {
-        this.engine.setListenerPosition(pos.x, pos.y, pos.z);
         this.visualizer.setListenerPositionMeters(pos.x, pos.y, pos.z);
+        this._syncAudioListenerPosition(
+          this.visualizer.listenerMX,
+          this.visualizer.listenerMY,
+          this.visualizer.listenerMZ
+        );
         this._updateHeightDisplay();
       }
     });
@@ -2738,7 +2742,7 @@ class App {
     // POV Height buttons
     document.getElementById('btn-height-up')?.addEventListener('click', () => {
       this.visualizer.moveListenerHeightBy(0.2);
-      this.engine.setListenerPosition(
+      this._syncAudioListenerPosition(
         this.visualizer.listenerMX,
         this.visualizer.listenerMY,
         this.visualizer.listenerMZ
@@ -2748,7 +2752,7 @@ class App {
 
     document.getElementById('btn-height-down')?.addEventListener('click', () => {
       this.visualizer.moveListenerHeightBy(-0.2);
-      this.engine.setListenerPosition(
+      this._syncAudioListenerPosition(
         this.visualizer.listenerMX,
         this.visualizer.listenerMY,
         this.visualizer.listenerMZ
@@ -2758,9 +2762,9 @@ class App {
 
     document.getElementById('btn-height-reset')?.addEventListener('click', () => {
       this.visualizer.setListenerHeight(0);
-      this.engine.setListenerPosition(
+      this._syncAudioListenerPosition(
         this.visualizer.listenerMX,
-        0,
+        this.visualizer.listenerMY,
         this.visualizer.listenerMZ
       );
       this._updateHeightDisplay();
@@ -2959,7 +2963,9 @@ class App {
     const movementTick = () => {
       if (this._heldKeys.size > 0) {
         // Compute movement relative to listener's current yaw
-        const currentYaw = this.headphoneMode === 'standard' ? this.virtualYaw : this.tracker.yaw;
+        const currentYaw = this.visualizer.walkableSceneMode
+          ? this.visualizer.yaw
+          : this.headphoneMode === 'standard' ? this.virtualYaw : this.tracker.yaw;
         const yawRad = (currentYaw * Math.PI) / 180;
         const fwdX =  Math.sin(yawRad);  // forward X component
         const fwdZ =  Math.cos(yawRad);  // forward Z component
@@ -3025,11 +3031,7 @@ class App {
         }
 
         if (moved) {
-          this.engine.setListenerPosition(
-            this.visualizer.listenerMX,
-            this.visualizer.listenerMY,
-            this.visualizer.listenerMZ
-          );
+          this._syncAudioListenerPosition();
           this._updateHeightDisplay();
         }
       } else if (this.activeEffect && !this.visualizer.isDraggingHead) {
@@ -3161,7 +3163,7 @@ class App {
 
         this.visualizer.setListenerPositionMeters(x, y, z);
         if (this.engine.audioContext) {
-          this.engine.setListenerPosition(x, y, z);
+          this._syncAudioListenerPosition(x, y, z);
         }
         this._updateHeightDisplay();
       }
@@ -3224,10 +3226,24 @@ class App {
 
   _syncSceneSpeakerPositions() {
     if (!this.engine || !this.visualizer) return;
+    const audioScale = this.visualizer.walkableSceneMode && this.visualizer._isCinemaScene() ? 0.25 : 1;
     const positions = this.visualizer.walkableSceneMode
-      ? this.visualizer.speakers.map(speaker => this.visualizer._sceneSpeakerPosition(speaker))
+      ? this.visualizer.speakers.map(speaker => {
+        const position = this.visualizer._sceneSpeakerPosition(speaker);
+        return {
+          x: position.x * audioScale,
+          y: position.y * audioScale,
+          z: position.z * audioScale
+        };
+      })
       : null;
     this.engine.setSceneSpeakerPositions(positions);
+  }
+
+  _syncAudioListenerPosition(x = this.visualizer.listenerMX, y = this.visualizer.listenerMY, z = this.visualizer.listenerMZ) {
+    if (!this.engine || !this.visualizer) return;
+    const audioScale = this.visualizer.walkableSceneMode && this.visualizer._isCinemaScene() ? 0.25 : 1;
+    this.engine.setListenerPosition(x * audioScale, y * audioScale, z * audioScale);
   }
 
   _setScenePovMode(active) {
@@ -3243,28 +3259,37 @@ class App {
         pitch: this.visualizer.pitch,
         roll: this.visualizer.roll,
         virtualYaw: this.virtualYaw,
-        virtualPitch: this.virtualPitch
+        virtualPitch: this.virtualPitch,
+        cinemaAudioState: this.visualizer._isCinemaScene()
+          ? {
+            listenerPosition: { ...this.engine.listenerPos },
+            speakerPositions: this.engine.sceneSpeakerPositions?.map(position => ({ ...position })) || null
+          }
+          : null
       };
       if (this.activeEffect) this.stopEffect(false);
       this.visualizer.setWalkableSceneMode(true);
       this.visualizer.setPovFollowSensor(true);
       this._syncSceneSpeakerPositions();
-      this.engine.setListenerPosition(
-        this.visualizer.listenerMX,
-        this.visualizer.listenerMY,
-        this.visualizer.listenerMZ
-      );
+      this._syncAudioListenerPosition();
       this._syncPovModeControls(true);
       this._showStatus(`POV Mode: ${this.visualizer.scenes[this.visualizer.scene].title}`);
     } else {
       const previous = this.scenePovReturnState;
       this.visualizer.setWalkableSceneMode(false);
-      this.engine.setSceneSpeakerPositions(null);
+      this.engine.setSceneSpeakerPositions(previous?.cinemaAudioState
+        ? previous.cinemaAudioState.speakerPositions
+        : null);
       if (previous) {
         this.visualizer.setPovFollowSensor(previous.povFollowSensor);
         this.visualizer.setListenerPositionMeters(previous.x, previous.y, previous.z);
         this.visualizer.updateHeadOrientation(previous.yaw, previous.pitch, previous.roll);
-        this.engine.setListenerPosition(previous.x, previous.y, previous.z);
+        const listenerPosition = previous.cinemaAudioState?.listenerPosition;
+        this.engine.setListenerPosition(
+          listenerPosition?.x ?? previous.x,
+          listenerPosition?.y ?? previous.y,
+          listenerPosition?.z ?? previous.z
+        );
         this.engine.updateListenerOrientation(previous.yaw, previous.pitch, previous.roll);
         this.virtualYaw = previous.virtualYaw;
         this.virtualPitch = previous.virtualPitch;
